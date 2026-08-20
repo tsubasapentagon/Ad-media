@@ -186,21 +186,25 @@ def load_all_ad_records(
         values = spread_init(spreadsheet_id, config["sheet"])
         records.extend(normalize_sheet_values(values, config))
 
+    # 同一媒体内の広告IDはDB上で1件。後ろの行を最新版として扱い、
+    # 最新行の空欄だけを前の行から補完する（過去行との共存を許容）。
+    deduplicated: dict[tuple[str, str], dict[str, str]] = {}
+    for record in records:
+        key = (record["media"], record["ad_id"])
+        if key not in deduplicated:
+            deduplicated[key] = record.copy()
+            continue
+        merged = deduplicated[key].copy()
+        for column, value in record.items():
+            if value is not None and str(value).strip() != "":
+                merged[column] = value
+        deduplicated[key] = merged
+    records = list(deduplicated.values())
+
     category_values = spread_init(category_spreadsheet_id, CATEGORY_SHEET)
     category_mapping = normalize_category_mapping(category_values)
     for record in records:
         record["category"] = category_mapping.get(record["subcategory"].casefold(), "未設定")
-
-    duplicate_keys: set[tuple[str, str]] = set()
-    seen: set[tuple[str, str]] = set()
-    for record in records:
-        key = (record["media"], record["ad_id"])
-        if key in seen:
-            duplicate_keys.add(key)
-        seen.add(key)
-    if duplicate_keys:
-        duplicates = ", ".join(f"{media}/{ad_id}" for media, ad_id in sorted(duplicate_keys))
-        raise ValueError(f"広告IDが重複しています: {duplicates}")
     return records
 
 

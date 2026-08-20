@@ -45,15 +45,20 @@ class AdMasterTest(unittest.TestCase):
         self.assertEqual(rows[1]["comment"], "ES添削")
         self.assertEqual(rows[1]["end_date"], "20260801")
 
-    def test_duplicate_id_in_same_media_is_rejected(self):
+    def test_duplicate_id_uses_latest_non_empty_values(self):
         sheets = {
-            "digmediaデータ": [[""], [""], [""], ["ID", "カテゴリ", "詳細", "CVポイント", "LP番号", "進捗", "開始日", "終了日"], ["same_sp", "A", "見出し1", "登録", "1", "稼働中", "", ""], ["same_sp", "A", "見出し2", "登録", "2", "稼働中", "", ""]],
+            "digmediaデータ": [[""], [""], [""], ["ID", "カテゴリ", "詳細", "CVポイント", "LP番号", "進捗", "開始日", "終了日"], ["same_sp", "A", "見出し1", "登録", "1", "稼働中", "2026/01/01", ""], ["same_sp", "", "見出し2", "", "2", "終了", "", "2026/08/01"]],
             "マスターデータ": [["ID", "カテゴリ", "詳細", "CVポイント", "LP", "進捗", "開始日", "終了日"]],
             "ベンチャー就活ナビ": [["ID", "カテゴリ", "位置", "CVポイント", "LP", "進捗", "開始日", "終了日"]],
             CATEGORY_SHEET: [["カテゴリ設定", "細分化", "個別カテゴリ"]],
         }
-        with self.assertRaisesRegex(ValueError, "Digmedia/same_sp"):
-            load_all_ad_records(lambda _key, tab: sheets[tab])
+        rows = load_all_ad_records(lambda _key, tab: sheets[tab])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["placement"], "見出し2")
+        self.assertEqual(rows[0]["lp_number"], "2")
+        self.assertEqual(rows[0]["status"], "終了")
+        self.assertEqual(rows[0]["start_date"], "20260101")
+        self.assertEqual(rows[0]["end_date"], "20260801")
 
     def test_category_is_merged_case_insensitively(self):
         sheets = {
