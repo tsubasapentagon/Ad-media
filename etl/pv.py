@@ -46,9 +46,10 @@ def normalize_article_master(values: Sequence[Sequence[Any]], config: dict[str, 
         subcategory = str(row[category_index]).strip() if category_index < len(row) else ""
         if not article_id:
             continue
-        if article_id in articles and articles[article_id] != subcategory:
-            raise ValueError(f'{config["sheet"]}: 記事IDのカテゴリが競合しています: {article_id}')
-        articles[article_id] = subcategory
+        # 同じ記事IDが再登録されている場合は後ろの行を最新版として採用する。
+        # ただし最新版のカテゴリが空欄なら、直前の有効値を保持する。
+        if subcategory or article_id not in articles:
+            articles[article_id] = subcategory
     return articles
 
 

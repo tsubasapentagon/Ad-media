@@ -15,6 +15,10 @@ class PvTest(unittest.TestCase):
         self.assertEqual(digmedia, {"10": "intern"})
         self.assertEqual(market, {"20": "面接"})
 
+    def test_duplicate_article_id_uses_latest_category(self):
+        values = [["id", "Category"], ["311443", "intern"], ["311443", "面接"]]
+        self.assertEqual(normalize_article_master(values, ARTICLE_CONFIG[0]), {"311443": "面接"})
+
     def test_groups_same_date_and_article_and_merges_category(self):
         rows = [
             {"date": "20260819", "pagePath": "/article/10", "screenPageViews": "12"},
