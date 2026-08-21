@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Dashboard } from "./Dashboard";
-import { requireChatGPTUser } from "./chatgpt-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +8,6 @@ export const metadata: Metadata = {
   description: "3メディアの広告パフォーマンスを分析する社内ダッシュボード",
 };
 
-export default async function Home() {
-  const user = await requireChatGPTUser("/");
-  void user;
+export default function Home() {
   return <Dashboard />;
 }
