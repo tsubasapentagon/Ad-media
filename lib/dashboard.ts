@@ -20,11 +20,6 @@ export const mediaLabels: Record<MediaKey, string> = {
   digmedia: "Digmedia", market: "就活市場", venture: "ベンチャー就活ナビ",
 };
 
-export const demoRows: AdPerformance[] = [
-  { id:"CenterD2003_sp",media:"digmedia",category:"自己分析",subcategory:"ES作成",placement:"見出し5",destination:"会員登録",comment:"ES AI添削",device:"SP",impressions:18420,clicks:978,cv:142,gradCv:98,status:"稼働中" },
-  { id:"CenterD2003_pc",media:"digmedia",category:"自己分析",subcategory:"ES作成",placement:"見出し5",destination:"会員登録",comment:"ES AI添削",device:"PC",impressions:7894,clicks:301,cv:36,gradCv:24,status:"稼働中" },
-];
-
 export const emptySnapshot: DashboardSnapshot = {
   rows:[],totals:{impressions:0,clicks:0,cv:0,gradCv:0},weekly:[],placementWeekly:[],
   options:{categories:[],subcategories:[],placements:[]},lastUpdated:null,rowCount:0,startDate:"",endDate:"",
