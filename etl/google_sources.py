@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,15 @@ def sheets_client():
 
 def spread_init(spreadsheet_id: str, sheet_name: str) -> list[list[str]]:
     """既存コード互換: 指定タブの全セルを二次元配列で返す。"""
-    return sheets_client().open_by_key(spreadsheet_id).worksheet(sheet_name).get_all_values()
+    for attempt in range(5):
+        try:
+            return sheets_client().open_by_key(spreadsheet_id).worksheet(sheet_name).get_all_values()
+        except Exception as error:
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            if status not in (429, 500, 502, 503, 504) or attempt == 4:
+                raise
+            time.sleep(2 ** attempt)
+    raise AssertionError("unreachable")
 
 
 @lru_cache(maxsize=1)
