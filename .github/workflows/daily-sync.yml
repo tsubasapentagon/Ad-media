@@ -1,5 +1,12 @@
 name: 広告データ更新
 on:
+  # 集計処理を変更したときは、その変更を使って直ちに実データ検証する。
+  push:
+    branches: [main]
+    paths:
+      - "etl/**"
+      - "supabase/**"
+      - ".github/workflows/daily-sync.yml"
   schedule:
     - cron: "0 0 * * *" # 09:00 JST
   workflow_dispatch:
