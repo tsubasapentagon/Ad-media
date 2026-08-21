@@ -38,7 +38,7 @@ export function proxy(request: NextRequest) {
 
   return new NextResponse("ログインしてください", {
     status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="小林広告分析ver.2", charset="UTF-8"' },
+    headers: { "WWW-Authenticate": 'Basic realm="Kobayashi Ad Analytics", charset="UTF-8"' },
   });
 }
 
