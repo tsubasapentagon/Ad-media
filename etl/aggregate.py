@@ -10,7 +10,7 @@ class Ad:
     device: str
 
 def allocate_impressions(page_views: int, ads: Iterable[Ad]) -> dict[tuple[str, str], int]:
-    """Allocate page PV to matching ads: SP 70%, PC 30%, evenly per device."""
+    """Legacy端末配賦。設置場所を持つ本処理は impressions.py を利用する。"""
     ads = list(ads)
     result: dict[tuple[str, str], int] = {}
     for device, ratio in (("SP", .7), ("PC", .3)):
@@ -18,9 +18,8 @@ def allocate_impressions(page_views: int, ads: Iterable[Ad]) -> dict[tuple[str, 
         if not matching:
             continue
         total = round(page_views * ratio)
-        each, remainder = divmod(total, len(matching))
-        for index, ad in enumerate(sorted(matching, key=lambda x: (x.media, x.ad_id))):
-            result[(ad.media, ad.ad_id)] = each + (1 if index < remainder else 0)
+        for ad in matching:
+            result[(ad.media, ad.ad_id)] = total
     return result
 
 def count_submissions(rows: Iterable[dict]) -> dict[tuple[str, str], int]:

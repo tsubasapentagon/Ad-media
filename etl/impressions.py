@@ -1,4 +1,4 @@
-"""記事PVを同じ小カテゴリの広告へSP 70%・PC 30%で日別配賦する。"""
+"""記事PVを広告へ端末別に付与し、同じ設置場所のAB広告間だけ均等配分する。"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -44,6 +44,7 @@ def allocate_daily_impressions(
         matching = [
             ad for ad in ads
             if ad["media"] == media
+            and ad["category"].casefold() == category.casefold()
             and ad["subcategory"].casefold() == subcategory.casefold()
             and is_ad_active_on(ad, date)
         ]
@@ -53,20 +54,24 @@ def allocate_daily_impressions(
         }
         device_totals = {"SP": round(page_views * 0.7), "PC": page_views - round(page_views * 0.7)}
         for device in ("SP", "PC"):
-            allocation = _allocate_integer(device_totals[device], [ad["ad_id"] for ad in by_device[device]])
+            by_placement: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for ad in by_device[device]:
-                allocated_keys.add((date, f'{ad["media"]}\0{ad["ad_id"]}'))
-                output.append({
-                    "date": date,
-                    "media": media,
-                    "ad_id": ad["ad_id"],
-                    "category": category,
-                    "subcategory": subcategory,
-                    "placement": ad["placement"],
-                    "device": device,
-                    "impressions": allocation[ad["ad_id"]],
-                    "allocation_status": "配賦済み",
-                })
+                by_placement[ad["placement"]].append(ad)
+            for placement_ads in by_placement.values():
+                allocation = _allocate_integer(device_totals[device], [ad["ad_id"] for ad in placement_ads])
+                for ad in placement_ads:
+                    allocated_keys.add((date, f'{ad["media"]}\0{ad["ad_id"]}'))
+                    output.append({
+                        "date": date,
+                        "media": media,
+                        "ad_id": ad["ad_id"],
+                        "category": category,
+                        "subcategory": subcategory,
+                        "placement": ad["placement"],
+                        "device": device,
+                        "impressions": allocation[ad["ad_id"]],
+                        "allocation_status": "配賦済み",
+                    })
 
     # PVと一致しなかった広告や端末不明広告も一覧から消さない。
     dates = sorted({row["date"] for row in pv_records})

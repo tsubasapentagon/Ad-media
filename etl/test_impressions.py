@@ -4,7 +4,7 @@ from impressions import allocate_daily_impressions
 
 
 class ImpressionsTest(unittest.TestCase):
-    def test_allocates_70_30_and_keeps_integer_total(self):
+    def test_gives_each_placement_the_full_70_30_device_share(self):
         pv = [{"date": "20260819", "media": "Digmedia", "category": "3年生", "subcategory": "intern", "page_views": 101}]
         ads = [
             {"media": "Digmedia", "ad_id": "b_sp", "category": "3年生", "subcategory": "intern", "placement": "見出し2", "device": "SP"},
@@ -13,8 +13,25 @@ class ImpressionsTest(unittest.TestCase):
         ]
         result = allocate_daily_impressions(pv, ads)
         values = {row["ad_id"]: row["impressions"] for row in result}
-        self.assertEqual(values, {"a_pc": 30, "a_sp": 36, "b_sp": 35})
-        self.assertEqual(sum(values.values()), 101)
+        self.assertEqual(values, {"a_pc": 30, "a_sp": 71, "b_sp": 71})
+
+    def test_does_not_divide_impressions_between_different_placements(self):
+        pv = [{"date": "20260819", "media": "Digmedia", "category": "ES", "subcategory": "es", "page_views": 1000}]
+        ads = [
+            {"media": "Digmedia", "ad_id": "A_sp", "category": "ES", "subcategory": "es", "placement": "見出し1", "device": "SP"},
+            {"media": "Digmedia", "ad_id": "B_sp", "category": "ES", "subcategory": "es", "placement": "見出し2", "device": "SP"},
+        ]
+        result = allocate_daily_impressions(pv, ads)
+        self.assertEqual({row["ad_id"]: row["impressions"] for row in result}, {"A_sp": 700, "B_sp": 700})
+
+    def test_divides_impressions_between_ab_ads_in_same_placement(self):
+        pv = [{"date": "20260819", "media": "Digmedia", "category": "ES", "subcategory": "es", "page_views": 1000}]
+        ads = [
+            {"media": "Digmedia", "ad_id": "A_sp", "category": "ES", "subcategory": "es", "placement": "見出し1", "device": "SP"},
+            {"media": "Digmedia", "ad_id": "B_sp", "category": "ES", "subcategory": "es", "placement": "見出し1", "device": "SP"},
+        ]
+        result = allocate_daily_impressions(pv, ads)
+        self.assertEqual({row["ad_id"]: row["impressions"] for row in result}, {"A_sp": 350, "B_sp": 350})
 
     def test_allocates_only_within_same_media_and_subcategory(self):
         pv = [{"date": "20260819", "media": "就活市場", "category": "選考", "subcategory": "面接", "page_views": 10}]
