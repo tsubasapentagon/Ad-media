@@ -9,7 +9,7 @@ async function render() {
 
   return worker.fetch(
     new Request("http://localhost/", {
-      headers: { accept: "text/html" },
+      headers: { accept: "text/html", "oai-authenticated-user-id":"test-user", "oai-authenticated-user-email":"t-kobayashi@hr-team.co.jp" },
     }),
     {
       ASSETS: {

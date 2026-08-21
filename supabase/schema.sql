@@ -57,6 +57,11 @@ create index sync_issues_run_fk_idx on public.sync_issues(sync_run_id);
 create schema if not exists private;
 revoke all on schema private from public, anon;
 grant usage on schema private to authenticated;
+create table private.dashboard_api_tokens (
+  token_hash text primary key,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
 
 create or replace function private.is_company_user() returns boolean
 language sql stable security definer set search_path='' as $$
@@ -223,6 +228,126 @@ revoke all on function public.record_sync_success(text,integer,integer,jsonb) fr
 grant execute on function public.sync_ad_master(jsonb) to service_role;
 grant execute on function public.replace_ad_metrics(date,date,jsonb,jsonb) to service_role;
 grant execute on function public.record_sync_success(text,integer,integer,jsonb) to service_role;
+
+create or replace function public.get_dashboard_performance(
+  p_start_date date,
+  p_end_date date,
+  p_media text default null,
+  p_category text default null,
+  p_subcategory text default null,
+  p_placement text default null,
+  p_graduation_year smallint default 2028,
+  p_search text default null,
+  p_limit integer default 100,
+  p_offset integer default 0
+) returns jsonb
+language sql stable security definer set search_path='' as $$
+with selected_ads as materialized (
+  select * from public.ads a
+  where a.is_current
+    and (p_media is null or a.media::text = p_media)
+    and (p_category is null or a.category = p_category)
+    and (p_subcategory is null or a.subcategory = p_subcategory)
+    and (p_placement is null or a.placement = p_placement)
+    and (p_search is null or concat_ws(' ',a.ad_id,a.placement,a.cv_point,a.comment) ilike '%'||p_search||'%')
+), metric_totals as materialized (
+  select m.media,m.ad_id,sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
+  from public.ad_daily_metrics m join selected_ads a using(media,ad_id)
+  where m.metric_date between p_start_date and p_end_date
+  group by m.media,m.ad_id
+), grad_totals as materialized (
+  select g.media,g.ad_id,sum(g.cv)::bigint grad_cv
+  from public.ad_daily_cv_by_grad g join selected_ads a using(media,ad_id)
+  where g.metric_date between p_start_date and p_end_date and g.graduation_year=p_graduation_year
+  group by g.media,g.ad_id
+), performance as materialized (
+  select a.media::text media,a.ad_id,a.device::text device,a.placement,a.cv_point destination,a.comment,
+    coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,a.status,
+    coalesce(m.impressions,0) impressions,coalesce(m.clicks,0) clicks,coalesce(m.cv,0) cv,coalesce(g.grad_cv,0) grad_cv
+  from selected_ads a left join metric_totals m using(media,ad_id) left join grad_totals g using(media,ad_id)
+)
+select jsonb_build_object(
+  'rows',coalesce((select jsonb_agg(to_jsonb(r) order by r.clicks desc,r.ad_id) from (select * from performance order by clicks desc,ad_id limit least(greatest(p_limit,1),500) offset greatest(p_offset,0)) r),'[]'::jsonb),
+  'totals',coalesce((select jsonb_build_object('impressions',sum(impressions),'clicks',sum(clicks),'cv',sum(cv),'gradCv',sum(grad_cv)) from performance),'{}'::jsonb),
+  'options',jsonb_build_object(
+    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and (p_media is null or media::text=p_media) and category is not null and category<>'') x),'[]'::jsonb),
+    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
+    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
+  ),
+  'lastUpdated',(select max(finished_at) from public.sync_runs where status='success'),
+  'rowCount',(select count(*) from performance),
+  'startDate',p_start_date,
+  'endDate',p_end_date
+);
+$$;
+revoke all on function public.get_dashboard_performance(date,date,text,text,text,text,smallint,text,integer,integer) from public,anon,authenticated;
+grant execute on function public.get_dashboard_performance(date,date,text,text,text,text,smallint,text,integer,integer) to service_role;
+
+create or replace function public.get_dashboard_trends(
+  p_start_date date,p_end_date date,p_media text default null,p_category text default null,
+  p_subcategory text default null,p_placement text default null,p_graduation_year smallint default 2028
+) returns jsonb
+language sql stable security definer set search_path='' as $$
+with selected_ads as materialized (
+  select * from public.ads a where a.is_current
+    and (p_media is null or a.media::text=p_media)
+    and (p_category is null or a.category=p_category)
+    and (p_subcategory is null or a.subcategory=p_subcategory)
+    and (p_placement is null or a.placement=p_placement)
+), metrics as materialized (
+  select date_trunc('week',m.metric_date)::date week_start,a.media::text media,a.placement,a.device::text device,
+    coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,
+    sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
+  from public.ad_daily_metrics m join selected_ads a using(media,ad_id)
+  where m.metric_date between p_start_date and p_end_date group by 1,2,3,4,5,6
+), grads as materialized (
+  select date_trunc('week',g.metric_date)::date week_start,a.media::text media,a.placement,a.device::text device,
+    coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,sum(g.cv)::bigint grad_cv
+  from public.ad_daily_cv_by_grad g join selected_ads a using(media,ad_id)
+  where g.metric_date between p_start_date and p_end_date and g.graduation_year=p_graduation_year group by 1,2,3,4,5,6
+), placement_weekly as (
+  select m.*,coalesce(g.grad_cv,0) grad_cv from metrics m
+  left join grads g using(week_start,media,placement,device,category,subcategory)
+)
+select jsonb_build_object(
+  'weekly',coalesce((select jsonb_agg(jsonb_build_object('week_start',week_start,'clicks',clicks,'cv',cv) order by week_start)
+    from (select week_start,sum(clicks)::bigint clicks,sum(cv)::bigint cv from metrics group by week_start) w),'[]'::jsonb),
+  'placementWeekly',coalesce((select jsonb_agg(to_jsonb(w) order by week_start desc,clicks desc) from placement_weekly w),'[]'::jsonb)
+);
+$$;
+revoke all on function public.get_dashboard_trends(date,date,text,text,text,text,smallint) from public,anon,authenticated;
+grant execute on function public.get_dashboard_trends(date,date,text,text,text,text,smallint) to service_role;
+
+create or replace function public.read_dashboard_performance(
+  p_access_token text,p_start_date date,p_end_date date,p_media text default null,p_category text default null,
+  p_subcategory text default null,p_placement text default null,p_graduation_year smallint default 2028,
+  p_search text default null,p_limit integer default 100,p_offset integer default 0
+) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+begin
+  if not exists (
+    select 1 from private.dashboard_api_tokens
+    where active and token_hash=encode(extensions.digest(p_access_token,'sha256'),'hex')
+  ) then raise exception 'not authorized'; end if;
+  return public.get_dashboard_performance(p_start_date,p_end_date,p_media,p_category,p_subcategory,p_placement,p_graduation_year,p_search,p_limit,p_offset);
+end;
+$$;
+revoke all on function public.read_dashboard_performance(text,date,date,text,text,text,text,smallint,text,integer,integer) from public,authenticated;
+grant execute on function public.read_dashboard_performance(text,date,date,text,text,text,text,smallint,text,integer,integer) to anon;
+
+create or replace function public.read_dashboard_trends(
+  p_access_token text,p_start_date date,p_end_date date,p_media text default null,p_category text default null,
+  p_subcategory text default null,p_placement text default null,p_graduation_year smallint default 2028
+) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+begin
+  if not exists (select 1 from private.dashboard_api_tokens where active and token_hash=encode(extensions.digest(p_access_token,'sha256'),'hex'))
+  then raise exception 'not authorized'; end if;
+  return public.get_dashboard_trends(p_start_date,p_end_date,p_media,p_category,p_subcategory,p_placement,p_graduation_year);
+end;
+$$;
+revoke all on function public.read_dashboard_trends(text,date,date,text,text,text,text,smallint) from public,authenticated;
+grant execute on function public.read_dashboard_trends(text,date,date,text,text,text,text,smallint) to anon;
 
 create or replace function public.log_failed_sync(p_trigger text,p_error text) returns bigint
 language plpgsql security definer set search_path='' as $$

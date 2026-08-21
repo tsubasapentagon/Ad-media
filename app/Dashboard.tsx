@@ -1,73 +1,56 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useState } from "react";
-import { demoRows, formatRate, mediaLabels, rate, type MediaKey } from "@/lib/dashboard";
+import { useEffect, useMemo, useState } from "react";
+import { emptySnapshot, formatRate, mediaLabels, rate, type AdPerformance, type DashboardSnapshot, type MediaKey } from "@/lib/dashboard";
 
-type MediaFilter = "all" | MediaKey;
-type IconName = "dashboard" | "weekly" | "ads" | "category" | "log" | "users";
+type MediaFilter="all"|MediaKey;
+type Period="7"|"this_week"|"last_week"|"two_weeks"|"three_weeks"|"month"|"last_month"|"custom";
+type IconName="dashboard"|"weekly"|"ads"|"category"|"log"|"users";
+const logo:Record<MediaKey,string>={digmedia:"/digmedia-logo.png",market:"/shukatsu-logo.png",venture:"/venture-logo.png"};
 
-const logo: Record<MediaKey, string> = { digmedia:"/digmedia-logo.png", market:"/shukatsu-logo.png", venture:"/venture-logo.png" };
-const weeks = [
-  ["6/29",2631,381],["7/6",2852,406],["7/13",2720,421],["7/20",3098,439],
-  ["7/27",3224,481],["8/3",3012,468],["8/10",3478,518],["8/17",3622,609],
-] as const;
-
-function Icon({ name }: { name: IconName }) {
-  const paths: Record<IconName, React.ReactNode> = {
-    dashboard:<><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></>,
-    weekly:<><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></>,
-    ads:<><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></>,
-    category:<><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></>,
-    log:<><path d="M12 8v5l3 2M21 12a9 9 0 1 1-3-6.7M21 4v6h-6"/></>,
-    users:<><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6M15 15c4 0 6 2 6 5"/></>,
-  };
-  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
+function iso(date:Date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`}
+function addDays(date:Date,days:number){const copy=new Date(date);copy.setDate(copy.getDate()+days);return copy}
+function rangeFor(period:Period,customStart:string,customEnd:string){
+  const today=new Date(),yesterday=addDays(today,-1),day=(today.getDay()+6)%7,monday=addDays(today,-day);
+  if(period==="custom") return {startDate:customStart,endDate:customEnd};
+  if(period==="this_week") return {startDate:iso(monday>yesterday?yesterday:monday),endDate:iso(yesterday)};
+  if(period==="last_week") return {startDate:iso(addDays(monday,-7)),endDate:iso(addDays(monday,-1))};
+  if(period==="two_weeks") return {startDate:iso(addDays(monday,-14)),endDate:iso(addDays(monday,-8))};
+  if(period==="three_weeks") return {startDate:iso(addDays(monday,-21)),endDate:iso(addDays(monday,-15))};
+  if(period==="month"){const first=new Date(today.getFullYear(),today.getMonth(),1);return {startDate:iso(first>yesterday?yesterday:first),endDate:iso(yesterday)}}
+  if(period==="last_month") return {startDate:iso(new Date(today.getFullYear(),today.getMonth()-1,1)),endDate:iso(new Date(today.getFullYear(),today.getMonth(),0))};
+  return {startDate:iso(addDays(yesterday,-6)),endDate:iso(yesterday)};
 }
 
-function Sidebar() {
-  const nav = [
-    ["dashboard","概要","dashboard"],["weekly","週次分析","weekly"],["ads","広告一覧","ads"],
-    ["category","カテゴリ設定","settings"],["log","更新ログ","logs"],["users","ユーザー権限","settings"],
-  ] as const;
-  return <aside className="sidebar"><div className="brand"><span>K</span><strong>小林広告分析 <small>ver.2</small></strong></div><nav aria-label="主なメニュー">
-    {nav.map(([icon,label,target],i)=><button key={label} className={i===0?"active":""} onClick={()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth"})}><Icon name={icon}/><span>{label}</span></button>)}
-  </nav><div className="sidebar-status"><i/>正常<span>次回 9:00</span></div></aside>;
+function Icon({name}:{name:IconName}){const paths:Record<IconName,React.ReactNode>={dashboard:<><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></>,weekly:<><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></>,ads:<><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></>,category:<><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></>,log:<><path d="M12 8v5l3 2M21 12a9 9 0 1 1-3-6.7M21 4v6h-6"/></>,users:<><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6M15 15c4 0 6 2 6 5"/></>};return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>}
+function Sidebar(){const nav=[["dashboard","概要","dashboard"],["weekly","週次分析","weekly"],["ads","広告一覧","ads"],["category","カテゴリ設定","settings"],["log","更新ログ","logs"],["users","ユーザー権限","settings"]] as const;return <aside className="sidebar"><div className="brand"><span>K</span><strong>小林広告分析 <small>ver.2</small></strong></div><nav aria-label="主なメニュー">{nav.map(([icon,label,target],i)=><button key={label} className={i===0?"active":""} onClick={()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth"})}><Icon name={icon}/><span>{label}</span></button>)}</nav><div className="sidebar-status"><i/>正常<span>次回 9:00</span></div></aside>}
+
+export function Dashboard(){
+  const initialRange=rangeFor("7","","");
+  const [snapshot,setSnapshot]=useState<DashboardSnapshot>(emptySnapshot),[loading,setLoading]=useState(true),[error,setError]=useState(""),[page,setPage]=useState(0);
+  const [media,setMedia]=useState<MediaFilter>("all"),[category,setCategory]=useState("all"),[subcategory,setSubcategory]=useState("all"),[placement,setPlacement]=useState("all"),[search,setSearch]=useState("");
+  const [period,setPeriod]=useState<Period>("7"),[customStart,setCustomStart]=useState(initialRange.startDate),[customEnd,setCustomEnd]=useState(initialRange.endDate);
+  useEffect(()=>{const range=rangeFor(period,customStart,customEnd);if(!range.startDate||!range.endDate||range.startDate>range.endDate)return;const controller=new AbortController(),params=new URLSearchParams(range);if(media!=="all")params.set("media",mediaLabels[media]);if(category!=="all")params.set("category",category);if(subcategory!=="all")params.set("subcategory",subcategory);if(placement!=="all")params.set("placement",placement);if(search.trim())params.set("search",search.trim());params.set("offset",String(page*100));async function load(){setLoading(true);setError("");try{const response=await fetch(`/api/dashboard?${params}`,{signal:controller.signal}),body=await response.json();if(!response.ok)throw new Error(body.error??"取得に失敗しました");setSnapshot(body as DashboardSnapshot)}catch(e){if(e instanceof Error&&e.name!=="AbortError"){setSnapshot(emptySnapshot);setError(e.message)}}finally{setLoading(false)}}void load();return()=>controller.abort()},[media,category,subcategory,placement,period,customStart,customEnd,search,page]);
+  const data=useMemo(()=>[...snapshot.rows].sort((a,b)=>b.clicks-a.clicks),[snapshot.rows]);
+  const t=snapshot.totals,kpis=[["表示回数",t.impressions.toLocaleString("ja-JP")],["クリック数",t.clicks.toLocaleString("ja-JP")],["CTR",formatRate(rate(t.clicks,t.impressions))],["CV数",t.cv.toLocaleString("ja-JP")],["CVR",formatRate(rate(t.cv,t.clicks))],["28卒CV",t.gradCv.toLocaleString("ja-JP")],["28卒CV率",formatRate(rate(t.gradCv,t.cv))]];
+  const maxWeekly=Math.max(1,...snapshot.weekly.flatMap(w=>[w.clicks,w.cv]));
+  const updated=snapshot.lastUpdated?new Date(snapshot.lastUpdated).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"取得中",selectedRange=rangeFor(period,customStart,customEnd),rangeError=selectedRange.startDate>selectedRange.endDate?"開始日は終了日以前にしてください":"";
+  return <div className="app-shell"><Sidebar/><div className="content"><section className="filter-panel"><div className="media-tabs"><button className={media==="all"?"active all":""} onClick={()=>{setMedia("all");setCategory("all");setSubcategory("all")}}>全メディア</button>{(Object.keys(mediaLabels) as MediaKey[]).map(key=><button key={key} className={media===key?"active":""} onClick={()=>{setMedia(key);setCategory("all");setSubcategory("all")}}>{/* vinextの固定ロゴは通常のimgで確実に表示する */}<img src={logo[key]} alt={mediaLabels[key]} width="125" height="28"/></button>)}</div><div className="filter-row">
+    <label><span>期間</span><select value={period} onChange={e=>setPeriod(e.target.value as Period)}><option value="7">直近7日間</option><option value="this_week">今週（月〜昨日）</option><option value="last_week">先週（月〜日）</option><option value="two_weeks">2週間前（月〜日）</option><option value="three_weeks">3週間前（月〜日）</option><option value="month">今月</option><option value="last_month">先月</option><option value="custom">任意期間</option></select></label>
+    <label><span>カテゴリ</span><select value={category} onChange={e=>{setCategory(e.target.value);setSubcategory("all")}}><option value="all">すべて</option>{snapshot.options.categories.map(x=><option key={x}>{x}</option>)}</select></label>
+    <label><span>小カテゴリ</span><select value={subcategory} onChange={e=>setSubcategory(e.target.value)}><option value="all">すべて</option>{snapshot.options.subcategories.map(x=><option key={x}>{x}</option>)}</select></label>
+    <label><span>設置場所</span><select value={placement} onChange={e=>setPlacement(e.target.value)}><option value="all">すべて</option>{snapshot.options.placements.map(x=><option key={x}>{x}</option>)}</select></label>
+    <label className="search"><span>広告を検索</span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="ID・設置場所・遷移先・コメント"/></label>
+  </div>{period==="custom"&&<div className="custom-range"><label>開始日<input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}/></label><span>〜</span><label>終了日<input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}/></label></div>}</section>
+  <main id="dashboard"><header><div><h1>小林広告分析 <small>ver.2</small></h1><p>{snapshot.startDate&&`${snapshot.startDate} 〜 ${snapshot.endDate}`}・3メディアの広告実績</p></div><div className="header-actions">{loading&&<span className="loading">更新中</span>}<span className="updated"><i/>最終更新 {updated}</span><div className="avatar">小</div></div></header>
+  {(error||rangeError)&&<div className="data-error">{error||rangeError}<button onClick={()=>location.reload()}>再読み込み</button></div>}
+  <section className="kpi-grid">{kpis.map(([label,value])=><article className="kpi" key={label}><span>{label}</span><strong>{value}</strong><small>{snapshot.startDate||"接続中"}</small></article>)}</section>
+  <section className="summary-grid"><div className="trend"><div className="section-title"><h2>週次推移</h2><span><i className="blue"/>クリック <i className="coral"/>CV</span></div><div className="bars">{snapshot.weekly.length?snapshot.weekly.map(w=><div className="week" key={w.weekStart}><div><b style={{height:`${Math.max(3,w.clicks/maxWeekly*140)}px`}}/><em style={{height:`${Math.max(3,w.cv/maxWeekly*140)}px`}}/></div><span>{new Date(w.weekStart).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"})}</span></div>):<div className="empty-chart">選択期間の週次データはありません</div>}</div></div><aside className="changes"><div className="section-title"><h2>現在の集計条件</h2></div><div className="condition"><span>対象広告</span><strong>{snapshot.rowCount.toLocaleString("ja-JP")}件</strong></div><div className="condition"><span>一覧表示</span><strong>{data.length.toLocaleString("ja-JP")}件</strong></div><div className="condition"><span>卒年</span><strong>28卒</strong></div></aside></section>
+  <PerformanceTable data={data} total={snapshot.rowCount} page={page} onPage={setPage}/><WeeklyPlacementTable data={snapshot.placementWeekly}/>
+  <section id="logs" className="log-panel"><div><i/>最新データを表示しています</div><span>広告 {snapshot.rowCount.toLocaleString("ja-JP")}件を集計</span><button>更新履歴を見る</button></section><div id="settings"/></main></div></div>
 }
 
-export function Dashboard() {
-  const [media,setMedia] = useState<MediaFilter>("all");
-  const [category,setCategory] = useState("all");
-  const [subcategory,setSubcategory] = useState("all");
-  const [placement,setPlacement] = useState("all");
-  const [grad,setGrad] = useState("28卒");
-  const [search,setSearch] = useState("");
-  const categories = useMemo(()=>[...new Set(demoRows.filter(r=>media==="all"||r.media===media).map(r=>r.category))],[media]);
-  const subcategories = useMemo(()=>[...new Set(demoRows.filter(r=>(media==="all"||r.media===media)&&(category==="all"||r.category===category)).map(r=>r.subcategory))],[media,category]);
-  const placements = [...new Set(demoRows.map(r=>r.placement))];
-  const data = useMemo(()=>demoRows.filter(r=>(media==="all"||r.media===media)&&(category==="all"||r.category===category)&&(subcategory==="all"||r.subcategory===subcategory)&&(placement==="all"||r.placement===placement)&&(!search||`${r.id} ${r.placement} ${r.destination} ${r.comment}`.toLowerCase().includes(search.toLowerCase()))).sort((a,b)=>a.placement.localeCompare(b.placement,"ja")||b.device.localeCompare(a.device)),[media,category,subcategory,placement,search]);
-  const totals = data.reduce((a,r)=>({imp:a.imp+r.impressions,click:a.click+r.clicks,cv:a.cv+r.cv,grad:a.grad+r.gradCv}),{imp:0,click:0,cv:0,grad:0});
-  const kpis = [["表示回数",totals.imp.toLocaleString("ja-JP")],["クリック数",totals.click.toLocaleString("ja-JP")],["CTR",formatRate(rate(totals.click,totals.imp))],["CV数",totals.cv.toLocaleString("ja-JP")],["CVR",formatRate(rate(totals.cv,totals.click))],[`${grad}CV`,totals.grad.toLocaleString("ja-JP")],[`${grad}CV率`,formatRate(rate(totals.grad,totals.cv))]];
-  return <div className="app-shell"><Sidebar/><div className="content">
-    <section className="filter-panel"><div className="media-tabs"><button className={media==="all"?"active all":""} onClick={()=>setMedia("all")}>全メディア</button>{(Object.keys(mediaLabels) as MediaKey[]).map(key=><button key={key} className={media===key?"active":""} onClick={()=>setMedia(key)}>{/* vinextではnext/imageのクライアント実行に互換性問題があるため固定ロゴはimgを使用 */}<img src={logo[key]} alt={mediaLabels[key]} width="125" height="28"/></button>)}</div><div className="filter-row">
-      <label><span>期間</span><select defaultValue="7"><option value="7">直近7日間</option><option>今週（月〜日）</option><option>先週（月〜日）</option><option>今月</option><option>先月</option><option>任意期間</option></select></label>
-      <label><span>カテゴリ</span><select value={category} onChange={e=>{setCategory(e.target.value);setSubcategory("all")}}><option value="all">すべて</option>{categories.map(x=><option key={x}>{x}</option>)}</select></label>
-      <label><span>小カテゴリ</span><select value={subcategory} onChange={e=>setSubcategory(e.target.value)}><option value="all">すべて</option>{subcategories.map(x=><option key={x}>{x}</option>)}</select></label>
-      <label><span>設置場所</span><select value={placement} onChange={e=>setPlacement(e.target.value)}><option value="all">すべて</option>{placements.map(x=><option key={x}>{x}</option>)}</select></label>
-      <label><span>注目卒年</span><select value={grad} onChange={e=>setGrad(e.target.value)}><option>28卒</option><option>29卒</option><option>30卒</option></select></label>
-      <label className="search"><span>広告を検索</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ID・設置場所・遷移先・コメント"/></label>
-    </div></section>
-    <main id="dashboard"><header><div><h1>小林広告分析 <small>ver.2</small></h1><p>3メディアの広告実績</p></div><div className="header-actions"><span className="demo">デモデータ</span><span className="updated"><i/>最終更新 8/20 09:04</span><div className="avatar">小</div></div></header>
-      <section className="kpi-grid">{kpis.map(([label,value],i)=><article className="kpi" key={label}><span>{label}</span><strong>{value}</strong><small className={i===2?"down":"up"}>{i===2?"-0.2pt":"+8.6%"} <i>前期間比</i></small></article>)}</section>
-      <section className="summary-grid"><div className="trend"><div className="section-title"><h2>直近8週間の推移</h2><span><i className="blue"/>クリック <i className="coral"/>CV</span></div><div className="bars">{weeks.map((w,i)=><div className="week" key={w[0]}><div><b style={{height:`${w[1]/42}px`}}/><em style={{height:`${w[2]/7}px`}}/></div><span>{w[0]}</span>{i===7&&<strong>+17.6%</strong>}</div>)}</div></div><aside className="changes"><div className="section-title"><h2>前期間からの変化</h2><span>3件</span></div>{[["見出し5・SP","CV数","+24.8%","up"],["記事中段・PC","CTR","-0.6pt","down"],["ファーストビュー・SP",`${grad}CV率`,"79.0%","up"]].map(x=><div className="change" key={x[0]}><div><b>{x[0]}</b><small>{x[1]}</small></div><strong className={x[3]}>{x[2]}</strong></div>)}</aside></section>
-      <PerformanceTable data={data} grad={grad}/>
-      <section id="weekly" className="weekly"><div className="section-title"><div><h2>設置場所別・週次分析</h2><p>選択中の条件で、月曜日〜日曜日の実績を比較</p></div><select defaultValue="current"><option value="current">今週</option><option>先週</option><option>2週間前</option><option>3週間前</option></select></div><PerformanceTable data={data} grad={grad} nested/></section>
-      <section id="logs" className="log-panel"><div><i/>最終更新は正常に完了しました</div><span>広告 8件・日次集計 56件を更新</span><button>更新履歴を見る</button></section>
-      <div id="settings"/>
-    </main></div></div>;
-}
+function PerformanceTable({data,total,page,onPage}:{data:AdPerformance[];total:number;page:number;onPage:(page:number)=>void}){return <section id="ads" className="table-card"><div className="section-title"><h2>広告パフォーマンス</h2><span>{total.toLocaleString("ja-JP")}件中 {total?`${page*100+1}〜${Math.min((page+1)*100,total)}件`:"0件"}</span></div><div className="table-wrap"><table><thead><tr><th>設置場所 / 広告</th><th>カテゴリ / 小カテゴリ</th><th>端末</th><th>表示回数</th><th>クリック</th><th>CTR</th><th>CV</th><th>CVR</th><th>28卒CV</th><th>28卒CV率</th><th>状態</th></tr></thead><tbody>{data.map(r=><tr key={`${r.media}-${r.id}`}><td><div className="ad-cell"><i className={`media ${r.media}`}/><div><b>{r.placement||"未設定"}</b><small>{r.id}{r.comment&&`・${r.comment}`}</small></div></div></td><td><b>{r.category}</b><small>{r.subcategory}</small></td><td><span className={`device ${r.device.toLowerCase()}`}>{r.device}</span></td><td>{r.impressions.toLocaleString("ja-JP")}</td><td>{r.clicks.toLocaleString("ja-JP")}</td><td><b>{formatRate(rate(r.clicks,r.impressions))}</b></td><td>{r.cv}</td><td><b>{formatRate(rate(r.cv,r.clicks))}</b></td><td>{r.gradCv}</td><td>{formatRate(rate(r.gradCv,r.cv))}</td><td><span className={`status ${r.status==="稼働中"?"live":"ended"}`}>{r.status||"未設定"}</span></td></tr>)}</tbody></table></div><div className="pagination"><button disabled={page===0} onClick={()=>onPage(page-1)}>前へ</button><span>{page+1}ページ</span><button disabled={(page+1)*100>=total} onClick={()=>onPage(page+1)}>次へ</button></div></section>}
 
-function PerformanceTable({data,grad,nested=false}:{data:typeof demoRows;grad:string;nested?:boolean}) {
-  const table = <div className="table-wrap"><table><thead><tr><th>設置場所 / 広告</th><th>カテゴリ / 小カテゴリ</th><th>端末</th><th>表示回数</th><th>クリック</th><th>CTR</th><th>CV</th><th>CVR</th><th>{grad}CV</th><th>{grad}CV率</th><th>状態</th></tr></thead><tbody>{data.map(r=><tr key={r.id}><td><div className="ad-cell"><i className={`media ${r.media}`}/><div><b>{r.placement}</b><small>{r.id}・{r.comment}</small></div></div></td><td><b>{r.category}</b><small>{r.subcategory}</small></td><td><span className={`device ${r.device.toLowerCase()}`}>{r.device}</span></td><td>{r.impressions.toLocaleString("ja-JP")}</td><td>{r.clicks.toLocaleString("ja-JP")}</td><td><b>{formatRate(rate(r.clicks,r.impressions))}</b></td><td>{r.cv}</td><td><b>{formatRate(rate(r.cv,r.clicks))}</b></td><td>{r.gradCv}</td><td>{formatRate(rate(r.gradCv,r.cv))}</td><td><span className={`status ${r.status==="稼働中"?"live":"ended"}`}>{r.status}</span></td></tr>)}</tbody></table></div>;
-  if(nested) return table;
-  return <section id="ads" className="table-card"><div className="section-title"><h2>広告パフォーマンス</h2><span>{data.length}件を表示</span></div>{table}</section>;
-}
+function WeeklyPlacementTable({data}:{data:DashboardSnapshot["placementWeekly"]}){return <section id="weekly" className="weekly"><div className="section-title"><div><h2>設置場所別・週次分析</h2><p>上の期間・カテゴリ・小カテゴリ・設置場所の条件を反映</p></div><span>{data.length}件</span></div><div className="table-wrap"><table><thead><tr><th>週</th><th>設置場所</th><th>カテゴリ / 小カテゴリ</th><th>端末</th><th>表示回数</th><th>クリック</th><th>CTR</th><th>CV</th><th>CVR</th><th>28卒CV</th><th>28卒CV率</th></tr></thead><tbody>{data.map((r,i)=><tr key={`${r.weekStart}-${r.media}-${r.placement}-${r.device}-${i}`}><td>{new Date(r.weekStart).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"})}週</td><td><div className="ad-cell"><i className={`media ${r.media}`}/><b>{r.placement||"未設定"}</b></div></td><td><b>{r.category}</b><small>{r.subcategory}</small></td><td><span className={`device ${r.device.toLowerCase()}`}>{r.device}</span></td><td>{r.impressions.toLocaleString("ja-JP")}</td><td>{r.clicks.toLocaleString("ja-JP")}</td><td>{formatRate(rate(r.clicks,r.impressions))}</td><td>{r.cv}</td><td>{formatRate(rate(r.cv,r.clicks))}</td><td>{r.gradCv}</td><td>{formatRate(rate(r.gradCv,r.cv))}</td></tr>)}</tbody></table></div></section>}
