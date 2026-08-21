@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/export-pv-local.yml"
+permissions:
+  contents: write
 jobs:
   export:
     runs-on: ubuntu-latest
@@ -38,3 +40,12 @@ jobs:
           name: pv-info-2026-07-01_2026-08-20
           path: pv_info.csv
           retention-days: 7
+      - name: Data Wrangler確認用CSVを保存
+        run: |
+          mkdir -p .local-preview
+          cp pv_info.csv .local-preview/pv_info.csv
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .local-preview/pv_info.csv
+          git commit -m "Update local PV preview CSV"
+          git push
