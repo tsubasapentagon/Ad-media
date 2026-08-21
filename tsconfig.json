@@ -21,7 +21,6 @@
     "app/**/*.ts",
     "app/**/*.tsx",
     "lib/**/*.ts",
-    "db/**/*.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
