@@ -7,7 +7,7 @@ const number = (value:unknown)=>Number(value ?? 0);
 export async function fetchDashboardSnapshot(params:{startDate:string;endDate:string;media?:string;category?:string;subcategory?:string;placement?:string;search?:string;limit?:number;offset?:number}):Promise<DashboardSnapshot>{
   const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_PUBLISHABLE_KEY,accessToken=process.env.DASHBOARD_API_TOKEN;
   if(!url||!key||!accessToken) throw new Error("Supabaseの画面接続設定がありません");
-  const endpoint=`${url.replace(/\/$/,"")}/rest/v1/rpc/`,headers={apikey:key,Authorization:`Bearer ${key}`,"Content-Type":"application/json"};
+  const endpoint=`${url.replace(/\/$/,"")}/rest/v1/rpc/`,headers={apikey:key,"Content-Type":"application/json"};
   const filters={p_access_token:accessToken,p_start_date:params.startDate,p_end_date:params.endDate,p_media:params.media||null,p_category:params.category||null,p_subcategory:params.subcategory||null,p_placement:params.placement||null,p_graduation_year:2028};
   const [performance,trends]=await Promise.all([
     fetch(`${endpoint}read_dashboard_performance`,{method:"POST",headers,body:JSON.stringify({...filters,p_search:params.search||null,p_limit:params.limit??100,p_offset:params.offset??0}),cache:"no-store"}),
