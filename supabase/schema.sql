@@ -229,6 +229,10 @@ grant execute on function public.sync_ad_master(jsonb) to service_role;
 grant execute on function public.replace_ad_metrics(date,date,jsonb,jsonb) to service_role;
 grant execute on function public.record_sync_success(text,integer,integer,jsonb) to service_role;
 
+-- 旧版の一括集計関数が残っている環境では公開経路ごと削除する。
+drop function if exists public.read_dashboard_snapshot(text,date,date,text,text,text,text,smallint,text,integer,integer);
+drop function if exists public.get_dashboard_snapshot(date,date,text,text,text,text,smallint,text,integer,integer);
+
 create or replace function public.get_dashboard_performance(
   p_start_date date,
   p_end_date date,
