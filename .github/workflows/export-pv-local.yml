@@ -44,8 +44,10 @@ jobs:
         run: |
           mkdir -p .local-preview
           cp pv_info.csv .local-preview/pv_info.csv
+          mkdir -p .local-preview/pv_parts
+          split -l 5000 -d -a 3 pv_info.csv .local-preview/pv_parts/pv_info_
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .local-preview/pv_info.csv
+          git add .local-preview/pv_info.csv .local-preview/pv_parts
           git commit -m "Update local PV preview CSV"
           git push
