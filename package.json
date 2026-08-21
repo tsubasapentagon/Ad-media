@@ -2,9 +2,7 @@
   "name": "kobayashi-ad-analysis-v2",
   "version": "0.2.0",
   "private": true,
-  "engines": {
-    "node": ">=22.13.0"
-  },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -30,7 +28,7 @@
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",
-    "eslint-plugin-react-hooks": "6.1.1",
+    "eslint-plugin-react-hooks": "6.10.2",
     "globals": "16.4.0",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
