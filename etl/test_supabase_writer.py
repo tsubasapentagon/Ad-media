@@ -38,14 +38,39 @@ class SupabaseWriterTest(unittest.TestCase):
         payload = build_ingest_payload(result,"20260819","20260819","schedule")
         self.assertEqual([row["ad_id"] for row in payload["p_ads"]], ["a_sp","b_pc"])
 
-    def test_calls_atomic_ingest_rpc(self):
+    def test_splits_metrics_by_day_and_completes_sync(self):
         calls=[]
         def post(url,**kwargs): calls.append((url,kwargs)); return FakeResponse()
         writer=SupabaseWriter("https://example.supabase.co","secret",post=post)
-        result={"ads":[],"daily_metrics":[],"cv_by_grad":[]}
-        self.assertEqual(writer.save(result,"20260819","20260819","manual"),12)
-        self.assertTrue(calls[0][0].endswith("/rpc/ingest_ad_analysis"))
+        result={
+            "ads":[{"media":"Digmedia","ad_id":"a_sp","device":"SP","placement":"見出し1"}],
+            "daily_metrics":[
+                {"date":"20260819","media":"Digmedia","ad_id":"a_sp","impressions":1,"clicks":1,"cv":0,"allocation_status":"配賦済み"},
+                {"date":"20260820","media":"Digmedia","ad_id":"a_sp","impressions":2,"clicks":1,"cv":1,"allocation_status":"配賦済み"},
+            ],
+            "cv_by_grad":[],
+        }
+        self.assertEqual(writer.save(result,"20260819","20260820","manual"),12)
+        self.assertTrue(calls[0][0].endswith("/rpc/sync_ad_master"))
+        self.assertTrue(calls[1][0].endswith("/rpc/replace_ad_metrics"))
+        self.assertEqual(calls[1][1]["json"]["p_start_date"], "2026-08-19")
+        self.assertTrue(calls[2][0].endswith("/rpc/replace_ad_metrics"))
+        self.assertEqual(calls[2][1]["json"]["p_start_date"], "2026-08-20")
+        self.assertTrue(calls[3][0].endswith("/rpc/record_sync_success"))
         self.assertEqual(calls[0][1]["headers"]["apikey"],"secret")
+
+    def test_retries_idempotent_chunk_after_520(self):
+        calls=[]
+        class FailedResponse(FakeResponse):
+            ok=False
+            status_code=520
+            text="error code: 520"
+        responses=[FailedResponse(), FakeResponse(), FakeResponse(), FakeResponse()]
+        def post(url,**kwargs): calls.append(url); return responses.pop(0)
+        writer=SupabaseWriter("https://example.supabase.co","secret",post=post,sleep=lambda _seconds: None)
+        result={"ads":[{"media":"Digmedia","ad_id":"a_sp","device":"SP","placement":"見出し1"}],"daily_metrics":[],"cv_by_grad":[]}
+        writer.save(result,"20260819","20260819","manual")
+        self.assertEqual(calls[0],calls[1])
 
 
 if __name__ == "__main__": unittest.main()

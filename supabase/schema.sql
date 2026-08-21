@@ -168,6 +168,62 @@ $$;
 revoke all on function public.ingest_ad_analysis(date,date,text,jsonb,jsonb,jsonb,jsonb) from public,anon,authenticated;
 grant execute on function public.ingest_ad_analysis(date,date,text,jsonb,jsonb,jsonb,jsonb) to service_role;
 
+-- 大量データを1リクエストで処理するとAPIの120秒上限を超えるため、
+-- 広告マスターと日別実績を分割して冪等に保存する。
+create or replace function public.sync_ad_master(p_ads jsonb) returns integer
+language plpgsql security definer set search_path='' as $$
+begin
+  if jsonb_array_length(p_ads) = 0 then raise exception 'ad master is empty'; end if;
+  update public.ads set is_current=false,updated_at=now() where is_current;
+  insert into public.ads(media,ad_id,device,placement,cv_point,lp_number,destination,comment,category,subcategory,status,start_date,end_date,is_current,updated_at)
+  select x.media::public.media_key,x.ad_id,x.device::public.device_kind,x.placement,x.cv_point,x.lp_number,x.destination,x.comment,x.category,x.subcategory,x.status,x.start_date,x.end_date,true,now()
+  from jsonb_to_recordset(p_ads) as x(media text,ad_id text,device text,placement text,cv_point text,lp_number text,destination text,comment text,category text,subcategory text,status text,start_date date,end_date date)
+  on conflict(media,ad_id) do update set device=excluded.device,placement=excluded.placement,cv_point=excluded.cv_point,lp_number=excluded.lp_number,destination=excluded.destination,comment=excluded.comment,category=excluded.category,subcategory=excluded.subcategory,status=excluded.status,start_date=excluded.start_date,end_date=excluded.end_date,is_current=true,updated_at=now();
+  return jsonb_array_length(p_ads);
+end;
+$$;
+
+create or replace function public.replace_ad_metrics(
+  p_start_date date, p_end_date date, p_metrics jsonb, p_grad_metrics jsonb
+) returns integer
+language plpgsql security definer set search_path='' as $$
+begin
+  if p_end_date < p_start_date then raise exception 'invalid sync date range'; end if;
+  delete from public.ad_daily_cv_by_grad where metric_date between p_start_date and p_end_date;
+  delete from public.ad_daily_metrics where metric_date between p_start_date and p_end_date;
+  insert into public.ad_daily_metrics(metric_date,media,ad_id,impressions,clicks,cv,allocation_status)
+  select x.metric_date,x.media::public.media_key,x.ad_id,x.impressions,x.clicks,x.cv,x.allocation_status
+  from jsonb_to_recordset(p_metrics) as x(metric_date date,media text,ad_id text,impressions bigint,clicks bigint,cv bigint,allocation_status text);
+  insert into public.ad_daily_cv_by_grad(metric_date,media,ad_id,graduation_year,cv)
+  select x.metric_date,x.media::public.media_key,x.ad_id,x.graduation_year,x.cv
+  from jsonb_to_recordset(p_grad_metrics) as x(metric_date date,media text,ad_id text,graduation_year smallint,cv bigint);
+  return jsonb_array_length(p_metrics);
+end;
+$$;
+
+create or replace function public.record_sync_success(
+  p_trigger text, p_ads_count integer, p_metrics_count integer, p_issues jsonb default '[]'::jsonb
+) returns bigint
+language plpgsql security definer set search_path='' as $$
+declare v_run_id bigint;
+begin
+  if p_trigger not in ('schedule','manual') then raise exception 'invalid sync trigger'; end if;
+  insert into public.sync_runs(started_at,finished_at,trigger,status,ads_count,metrics_count)
+  values(now(),now(),p_trigger,'success',p_ads_count,p_metrics_count) returning id into v_run_id;
+  insert into public.sync_issues(sync_run_id,issue_type,media,source_id,details)
+  select v_run_id,x.issue_type,x.media,x.source_id,x.details
+  from jsonb_to_recordset(p_issues) as x(issue_type text,media text,source_id text,details text);
+  return v_run_id;
+end;
+$$;
+
+revoke all on function public.sync_ad_master(jsonb) from public,anon,authenticated;
+revoke all on function public.replace_ad_metrics(date,date,jsonb,jsonb) from public,anon,authenticated;
+revoke all on function public.record_sync_success(text,integer,integer,jsonb) from public,anon,authenticated;
+grant execute on function public.sync_ad_master(jsonb) to service_role;
+grant execute on function public.replace_ad_metrics(date,date,jsonb,jsonb) to service_role;
+grant execute on function public.record_sync_success(text,integer,integer,jsonb) to service_role;
+
 create or replace function public.log_failed_sync(p_trigger text,p_error text) returns bigint
 language plpgsql security definer set search_path='' as $$
 declare v_run_id bigint;

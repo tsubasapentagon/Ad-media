@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import os
 import json
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -93,10 +94,11 @@ def build_ingest_payload(result: dict[str, Any], start_date: str, end_date: str,
 
 
 class SupabaseWriter:
-    def __init__(self, url: str, secret_key: str, post: Callable[..., Any] = standard_post):
+    def __init__(self, url: str, secret_key: str, post: Callable[..., Any] = standard_post, sleep: Callable[[float], None] = time.sleep):
         self.url = url.rstrip("/")
         self.secret_key = secret_key
         self.post = post
+        self.sleep = sleep
 
     @classmethod
     def from_environment(cls):
@@ -111,10 +113,50 @@ class SupabaseWriter:
             raise RuntimeError(f"Supabase {function} failed ({response.status_code}): {response.text[:2000]}")
         return response.json()
 
+    def _idempotent_rpc(self, function: str, payload: dict[str, Any]) -> Any:
+        """ネットワーク系の一時エラーだけを指数バックオフで再試行する。"""
+        for attempt in range(3):
+            try:
+                return self._rpc(function, payload)
+            except RuntimeError as error:
+                retryable = any(f"failed ({status})" in str(error) for status in (408, 520, 502, 503, 504))
+                if not retryable or attempt == 2:
+                    raise
+                self.sleep(2 ** attempt)
+        raise AssertionError("unreachable")
+
     def save(self, result: dict[str, Any], start_date: str, end_date: str, trigger: str = "schedule") -> Any:
         payload = build_ingest_payload(result, start_date, end_date, trigger)
         try:
-            return self._rpc("ingest_ad_analysis", payload)
+            # 広告マスターは毎回全件更新する。日別実績とは分離し、巨大な
+            # JSON/長時間トランザクションで無料枠DBを圧迫しないようにする。
+            self._idempotent_rpc("sync_ad_master", {"p_ads": payload["p_ads"]})
+
+            metrics_by_date: dict[str, list[dict[str, Any]]] = {}
+            for row in payload["p_metrics"]:
+                metrics_by_date.setdefault(row["metric_date"], []).append(row)
+            grad_by_date: dict[str, list[dict[str, Any]]] = {}
+            for row in payload["p_grad_metrics"]:
+                grad_by_date.setdefault(row["metric_date"], []).append(row)
+
+            current = datetime.strptime(payload["p_start_date"], "%Y-%m-%d").date()
+            end = datetime.strptime(payload["p_end_date"], "%Y-%m-%d").date()
+            while current <= end:
+                day = current.isoformat()
+                self._idempotent_rpc("replace_ad_metrics", {
+                    "p_start_date": day,
+                    "p_end_date": day,
+                    "p_metrics": metrics_by_date.get(day, []),
+                    "p_grad_metrics": grad_by_date.get(day, []),
+                })
+                current += timedelta(days=1)
+
+            return self._rpc("record_sync_success", {
+                "p_trigger": trigger,
+                "p_ads_count": len(payload["p_ads"]),
+                "p_metrics_count": len(payload["p_metrics"]),
+                "p_issues": payload["p_issues"],
+            })
         except Exception as error:
             try:
                 self._rpc("log_failed_sync", {"p_trigger":trigger,"p_error":str(error)})
