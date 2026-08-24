@@ -256,12 +256,12 @@ with selected_ads as materialized (
     and (p_search is null or concat_ws(' ',a.ad_id,a.placement,a.cv_point,a.comment) ilike '%'||p_search||'%')
 ), metric_totals as materialized (
   select m.media,m.ad_id,sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
-  from public.ad_daily_metrics m join selected_ads a using(media,ad_id)
+  from public.ad_daily_metrics m
   where m.metric_date between p_start_date and p_end_date
   group by m.media,m.ad_id
 ), grad_totals as materialized (
   select g.media,g.ad_id,sum(g.cv)::bigint grad_cv
-  from public.ad_daily_cv_by_grad g join selected_ads a using(media,ad_id)
+  from public.ad_daily_cv_by_grad g
   where g.metric_date between p_start_date and p_end_date and g.graduation_year=p_graduation_year
   group by g.media,g.ad_id
 ), performance as materialized (
@@ -298,17 +298,26 @@ with selected_ads as materialized (
     and (p_category is null or a.category=p_category)
     and (p_subcategory is null or a.subcategory=p_subcategory)
     and (p_placement is null or a.placement=p_placement)
+), metric_by_ad as materialized (
+  select date_trunc('week',m.metric_date)::date week_start,m.media,m.ad_id,
+    sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
+  from public.ad_daily_metrics m
+  where m.metric_date between p_start_date and p_end_date group by 1,2,3
+), grad_by_ad as materialized (
+  select date_trunc('week',g.metric_date)::date week_start,g.media,g.ad_id,sum(g.cv)::bigint grad_cv
+  from public.ad_daily_cv_by_grad g
+  where g.metric_date between p_start_date and p_end_date and g.graduation_year=p_graduation_year group by 1,2,3
 ), metrics as materialized (
-  select date_trunc('week',m.metric_date)::date week_start,a.media::text media,a.placement,a.device::text device,
+  select m.week_start,a.media::text media,a.placement,a.device::text device,
     coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,
     sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
-  from public.ad_daily_metrics m join selected_ads a using(media,ad_id)
-  where m.metric_date between p_start_date and p_end_date group by 1,2,3,4,5,6
+  from metric_by_ad m join selected_ads a using(media,ad_id)
+  group by 1,2,3,4,5,6
 ), grads as materialized (
-  select date_trunc('week',g.metric_date)::date week_start,a.media::text media,a.placement,a.device::text device,
-    coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,sum(g.cv)::bigint grad_cv
-  from public.ad_daily_cv_by_grad g join selected_ads a using(media,ad_id)
-  where g.metric_date between p_start_date and p_end_date and g.graduation_year=p_graduation_year group by 1,2,3,4,5,6
+  select g.week_start,a.media::text media,a.placement,a.device::text device,
+    coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,sum(g.grad_cv)::bigint grad_cv
+  from grad_by_ad g join selected_ads a using(media,ad_id)
+  group by 1,2,3,4,5,6
 ), placement_weekly as (
   select m.*,coalesce(g.grad_cv,0) grad_cv from metrics m
   left join grads g using(week_start,media,placement,device,category,subcategory)
