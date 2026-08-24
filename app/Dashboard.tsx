@@ -54,7 +54,7 @@ function PerformanceTable({data,total,page,onPage}:{data:AdPerformance[];total:n
 type WeeklyMetric="impressions"|"clicks"|"ctr"|"cv"|"cvr"|"gradCv"|"gradRate";
 type WeeklyTotal={impressions:number;clicks:number;cv:number;gradCv:number};
 const weeklyMetrics:[WeeklyMetric,string][]=[["impressions","表示回数"],["clicks","クリック"],["ctr","CTR"],["cv","CV"],["cvr","CVR"],["gradCv","28卒CV"],["gradRate","28卒CV率"]];
-function weeklyValue(total:WeeklyTotal,metric:WeeklyMetric){if(metric==="ctr")return rate(total.clicks,total.impressions);if(metric==="cvr")return rate(total.cv,total.clicks);if(metric==="gradRate")return rate(total.gradCv,total.cv);return total[metric]}
+function weeklyValue(total:WeeklyTotal,metric:WeeklyMetric):number{if(metric==="ctr")return rate(total.clicks,total.impressions)??0;if(metric==="cvr")return rate(total.cv,total.clicks)??0;if(metric==="gradRate")return rate(total.gradCv,total.cv)??0;return total[metric]}
 function formatWeekly(value:number,metric:WeeklyMetric){return ["ctr","cvr","gradRate"].includes(metric)?formatRate(value):Math.round(value).toLocaleString("ja-JP")}
 function headlineOf(value:string){const normalized=value.normalize("NFKC").replace(/\s/g,"");const match=normalized.match(/見出し([12357])/);return match?`見出し${match[1]}`:null}
 
