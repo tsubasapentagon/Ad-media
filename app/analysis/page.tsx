@@ -1,4 +1,3 @@
 import { Dashboard } from "../Dashboard";
-import { requireChatGPTUser } from "../chatgpt-auth";
 export const dynamic="force-dynamic";
-export default async function Page(){await requireChatGPTUser("/analysis");return <Dashboard view="overview"/>}
+export default function Page(){return <Dashboard view="overview"/>}
