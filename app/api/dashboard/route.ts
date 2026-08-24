@@ -6,6 +6,8 @@ export async function GET(request:Request){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return Response.json({error:"期間が正しくありません"},{status:400});
   if(startDate>endDate) return Response.json({error:"開始日は終了日以前にしてください"},{status:400});
   const offset=Math.max(0,Number(url.searchParams.get("offset")||0));
-  try{return Response.json(await fetchDashboardSnapshot({startDate,endDate,media:url.searchParams.get("media")||undefined,category:url.searchParams.get("category")||undefined,subcategory:url.searchParams.get("subcategory")||undefined,placement:url.searchParams.get("placement")||undefined,search:url.searchParams.get("search")||undefined,limit:100,offset}));}
+  const scope=url.searchParams.get("scope");
+  const scopePlacement=scope==="standard"?"__standard__":scope==="direct"?"__direct__":scope==="article"?"記事内":undefined;
+  try{return Response.json(await fetchDashboardSnapshot({startDate,endDate,media:url.searchParams.get("media")||undefined,category:url.searchParams.get("category")||undefined,subcategory:url.searchParams.get("subcategory")||undefined,placement:url.searchParams.get("placement")||scopePlacement,search:url.searchParams.get("search")||undefined,limit:100,offset}));}
   catch(error){return Response.json({error:error instanceof Error?error.message:"分析データを取得できませんでした"},{status:500});}
 }
