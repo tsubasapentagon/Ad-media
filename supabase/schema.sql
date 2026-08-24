@@ -249,6 +249,8 @@ language sql stable security definer set search_path='' as $$
 with selected_ads as materialized (
   select * from public.ads a
   where a.is_current
+    and (a.start_date is null or a.start_date <= p_end_date)
+    and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text = p_media)
     and (p_category is null or a.category = p_category)
     and (p_subcategory is null or a.subcategory = p_subcategory)
@@ -265,7 +267,7 @@ with selected_ads as materialized (
   where g.metric_date between p_start_date and p_end_date and g.graduation_year=p_graduation_year
   group by g.media,g.ad_id
 ), performance as materialized (
-  select a.media::text media,a.ad_id,a.device::text device,a.placement,a.cv_point destination,a.comment,
+  select a.media::text media,a.ad_id,a.device::text device,a.placement,a.cv_point destination,a.comment,a.start_date,a.end_date,
     coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,a.status,
     coalesce(m.impressions,0) impressions,coalesce(m.clicks,0) clicks,coalesce(m.cv,0) cv,coalesce(g.grad_cv,0) grad_cv
   from selected_ads a left join metric_totals m using(media,ad_id) left join grad_totals g using(media,ad_id)
@@ -274,9 +276,9 @@ select jsonb_build_object(
   'rows',coalesce((select jsonb_agg(to_jsonb(r) order by r.clicks desc,r.ad_id) from (select * from performance order by clicks desc,ad_id limit least(greatest(p_limit,1),500) offset greatest(p_offset,0)) r),'[]'::jsonb),
   'totals',coalesce((select jsonb_build_object('impressions',sum(impressions),'clicks',sum(clicks),'cv',sum(cv),'gradCv',sum(grad_cv)) from performance),'{}'::jsonb),
   'options',jsonb_build_object(
-    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and (p_media is null or media::text=p_media) and category is not null and category<>'') x),'[]'::jsonb),
-    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
-    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
+    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and category is not null and category<>'') x),'[]'::jsonb),
+    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
+    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
   ),
   'lastUpdated',(select max(finished_at) from public.sync_runs where status='success'),
   'rowCount',(select count(*) from performance),
@@ -294,6 +296,8 @@ create or replace function public.get_dashboard_trends(
 language sql stable security definer set search_path='' as $$
 with selected_ads as materialized (
   select * from public.ads a where a.is_current
+    and (a.start_date is null or a.start_date <= p_end_date)
+    and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text=p_media)
     and (p_category is null or a.category=p_category)
     and (p_subcategory is null or a.subcategory=p_subcategory)

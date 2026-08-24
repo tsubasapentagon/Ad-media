@@ -5,6 +5,7 @@ export type AdPerformance = {
   id: string; media: MediaKey; category: string; subcategory: string;
   placement: string; destination: string; comment: string; device: Device;
   impressions: number; clicks: number; cv: number; gradCv: number; status: string;
+  startDate: string | null; endDate: string | null;
 };
 
 export type DashboardSnapshot = {

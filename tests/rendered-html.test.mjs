@@ -8,7 +8,7 @@ async function render() {
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request("http://localhost/analysis", {
       headers: { accept: "text/html", "oai-authenticated-user-id":"test-user", "oai-authenticated-user-email":"t-kobayashi@hr-team.co.jp" },
     }),
     {
@@ -31,19 +31,28 @@ test("server-renders the advertising dashboard", async () => {
   const html = await response.text();
   assert.match(html, /<title>小林広告分析ver\.2<\/title>/i);
   assert.match(html, /小林広告分析/);
-  assert.match(html, /広告パフォーマンス/);
-  assert.match(html, /設置場所別・週次分析/);
+  assert.match(html, /広告分析概要/);
+  assert.match(html, /週次分析/);
+  assert.match(html, /広告一覧/);
   assert.doesNotMatch(html, /UI PROTOTYPE|画面案を切り替え/);
 });
 
 test("keeps the selected design and removes prototype variants", async () => {
-  const [dashboard, page] = await Promise.all([
+  const [dashboard, sidebar, page, adsPage, weeklyPage] = await Promise.all([
     readFile(new URL("../app/Dashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/_components/AppFrame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ads/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/weekly/page.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(dashboard, /カテゴリ/);
   assert.match(dashboard, /小カテゴリ/);
-  assert.match(dashboard, /sidebar/);
+  assert.match(dashboard, /掲載期間/);
+  assert.match(sidebar, /\/categories/);
+  assert.match(sidebar, /\/logs/);
+  assert.match(sidebar, /\/users/);
   assert.doesNotMatch(dashboard, /VariantA|VariantB|VariantC|prototype-switcher/);
-  assert.match(page, /<Dashboard \/>/);
+  assert.match(page, /redirect\("\/analysis"\)/);
+  assert.match(adsPage, /view="ads"/);
+  assert.match(weeklyPage, /view="weekly"/);
 });
