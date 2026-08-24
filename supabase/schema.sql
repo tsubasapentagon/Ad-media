@@ -13,7 +13,7 @@ create table public.categories (id bigint generated always as identity primary k
 create table public.subcategories (id bigint generated always as identity primary key, category_id bigint not null references public.categories(id) on delete cascade, name text not null, display_order int not null default 0, unique(category_id,name));
 create table public.ads (
   media public.media_key not null, ad_id text not null, device public.device_kind not null,
-  placement text not null, cv_point text, lp_number text, destination text, comment text,
+  placement text not null, placement_detail text not null default '', cv_point text, lp_number text, destination text, comment text,
   category text, subcategory text,
   status text not null default '', start_date date, end_date date,
   is_current boolean not null default true, updated_at timestamptz not null default now(),
@@ -146,10 +146,10 @@ begin
   -- 広告マスターは毎回全件スナップショットとして同期する。
   update public.ads set is_current=false,updated_at=now() where is_current;
 
-  insert into public.ads(media,ad_id,device,placement,cv_point,lp_number,destination,comment,category,subcategory,status,start_date,end_date,is_current,updated_at)
-  select x.media::public.media_key,x.ad_id,x.device::public.device_kind,x.placement,x.cv_point,x.lp_number,x.destination,x.comment,x.category,x.subcategory,x.status,x.start_date,x.end_date,true,now()
-  from jsonb_to_recordset(p_ads) as x(media text,ad_id text,device text,placement text,cv_point text,lp_number text,destination text,comment text,category text,subcategory text,status text,start_date date,end_date date)
-  on conflict(media,ad_id) do update set device=excluded.device,placement=excluded.placement,cv_point=excluded.cv_point,lp_number=excluded.lp_number,destination=excluded.destination,comment=excluded.comment,category=excluded.category,subcategory=excluded.subcategory,status=excluded.status,start_date=excluded.start_date,end_date=excluded.end_date,is_current=true,updated_at=now();
+  insert into public.ads(media,ad_id,device,placement,placement_detail,cv_point,lp_number,destination,comment,category,subcategory,status,start_date,end_date,is_current,updated_at)
+  select x.media::public.media_key,x.ad_id,x.device::public.device_kind,x.placement,coalesce(x.placement_detail,x.placement),x.cv_point,x.lp_number,x.destination,x.comment,x.category,x.subcategory,x.status,x.start_date,x.end_date,true,now()
+  from jsonb_to_recordset(p_ads) as x(media text,ad_id text,device text,placement text,placement_detail text,cv_point text,lp_number text,destination text,comment text,category text,subcategory text,status text,start_date date,end_date date)
+  on conflict(media,ad_id) do update set device=excluded.device,placement=excluded.placement,placement_detail=excluded.placement_detail,cv_point=excluded.cv_point,lp_number=excluded.lp_number,destination=excluded.destination,comment=excluded.comment,category=excluded.category,subcategory=excluded.subcategory,status=excluded.status,start_date=excluded.start_date,end_date=excluded.end_date,is_current=true,updated_at=now();
 
   delete from public.ad_daily_cv_by_grad where metric_date between p_start_date and p_end_date;
   delete from public.ad_daily_metrics where metric_date between p_start_date and p_end_date;
@@ -180,10 +180,10 @@ language plpgsql security definer set search_path='' as $$
 begin
   if jsonb_array_length(p_ads) = 0 then raise exception 'ad master is empty'; end if;
   update public.ads set is_current=false,updated_at=now() where is_current;
-  insert into public.ads(media,ad_id,device,placement,cv_point,lp_number,destination,comment,category,subcategory,status,start_date,end_date,is_current,updated_at)
-  select x.media::public.media_key,x.ad_id,x.device::public.device_kind,x.placement,x.cv_point,x.lp_number,x.destination,x.comment,x.category,x.subcategory,x.status,x.start_date,x.end_date,true,now()
-  from jsonb_to_recordset(p_ads) as x(media text,ad_id text,device text,placement text,cv_point text,lp_number text,destination text,comment text,category text,subcategory text,status text,start_date date,end_date date)
-  on conflict(media,ad_id) do update set device=excluded.device,placement=excluded.placement,cv_point=excluded.cv_point,lp_number=excluded.lp_number,destination=excluded.destination,comment=excluded.comment,category=excluded.category,subcategory=excluded.subcategory,status=excluded.status,start_date=excluded.start_date,end_date=excluded.end_date,is_current=true,updated_at=now();
+  insert into public.ads(media,ad_id,device,placement,placement_detail,cv_point,lp_number,destination,comment,category,subcategory,status,start_date,end_date,is_current,updated_at)
+  select x.media::public.media_key,x.ad_id,x.device::public.device_kind,x.placement,coalesce(x.placement_detail,x.placement),x.cv_point,x.lp_number,x.destination,x.comment,x.category,x.subcategory,x.status,x.start_date,x.end_date,true,now()
+  from jsonb_to_recordset(p_ads) as x(media text,ad_id text,device text,placement text,placement_detail text,cv_point text,lp_number text,destination text,comment text,category text,subcategory text,status text,start_date date,end_date date)
+  on conflict(media,ad_id) do update set device=excluded.device,placement=excluded.placement,placement_detail=excluded.placement_detail,cv_point=excluded.cv_point,lp_number=excluded.lp_number,destination=excluded.destination,comment=excluded.comment,category=excluded.category,subcategory=excluded.subcategory,status=excluded.status,start_date=excluded.start_date,end_date=excluded.end_date,is_current=true,updated_at=now();
   return jsonb_array_length(p_ads);
 end;
 $$;
@@ -249,6 +249,7 @@ language sql stable security definer set search_path='' as $$
 with selected_ads as materialized (
   select * from public.ads a
   where a.is_current
+    and a.status <> '作成なし'
     and (a.start_date is null or a.start_date <= p_end_date)
     and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text = p_media)
@@ -276,9 +277,9 @@ select jsonb_build_object(
   'rows',coalesce((select jsonb_agg(to_jsonb(r) order by r.clicks desc,r.ad_id) from (select * from performance order by clicks desc,ad_id limit least(greatest(p_limit,1),500) offset greatest(p_offset,0)) r),'[]'::jsonb),
   'totals',coalesce((select jsonb_build_object('impressions',sum(impressions),'clicks',sum(clicks),'cv',sum(cv),'gradCv',sum(grad_cv)) from performance),'{}'::jsonb),
   'options',jsonb_build_object(
-    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and category is not null and category<>'') x),'[]'::jsonb),
-    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
-    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
+    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and category is not null and category<>'') x),'[]'::jsonb),
+    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
+    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
   ),
   'lastUpdated',(select max(finished_at) from public.sync_runs where status='success'),
   'rowCount',(select count(*) from performance),
@@ -296,6 +297,7 @@ create or replace function public.get_dashboard_trends(
 language sql stable security definer set search_path='' as $$
 with selected_ads as materialized (
   select * from public.ads a where a.is_current
+    and a.status <> '作成なし'
     and (a.start_date is null or a.start_date <= p_end_date)
     and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text=p_media)

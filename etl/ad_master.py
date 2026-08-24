@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import datetime
 import re
+import unicodedata
 from typing import Any
 
 SPREADSHEET_ID = "1_5eKLVYJEkkv6U8zOXg3XoYAWNPPEu9Fwckev0SBIQY"
@@ -15,6 +16,7 @@ OUTPUT_COLUMNS = (
     "category",
     "subcategory",
     "placement",
+    "placement_detail",
     "cv_point",
     "lp_number",
     "device",
@@ -103,6 +105,19 @@ def normalize_optional_date(value: Any) -> str | None:
     return None
 
 
+def normalize_placement(value: Any) -> str:
+    """分析用の設置場所へまとめ、原文は別カラムに残す。"""
+    original = str(value).strip()
+    compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", original))
+    if "直LP" in compact:
+        return "直LP"
+    if re.search(r"(?:^|\d)直L", compact):
+        return "直L"
+    if "記事内" in compact:
+        return "記事内"
+    return original or "未設定"
+
+
 def normalize_sheet_values(values: Sequence[Sequence[Any]], config: dict[str, Any]) -> list[dict[str, str]]:
     """get_all_values() の結果を媒体共通の辞書へ変換する。"""
     if len(values) <= config["header_row"]:
@@ -130,17 +145,22 @@ def normalize_sheet_values(values: Sequence[Sequence[Any]], config: dict[str, An
         ad_id = cell("ad_id")
         if not ad_id:
             continue
+        status = cell("status")
+        if status == "作成なし":
+            continue
+        placement_detail = cell("placement")
         records.append(
             {
                 "media": config["media"],
                 "ad_id": ad_id,
                 "category": "",
                 "subcategory": cell("subcategory"),
-                "placement": cell("placement"),
+                "placement": normalize_placement(placement_detail),
+                "placement_detail": placement_detail,
                 "cv_point": cell("cv_point"),
                 "lp_number": cell("lp_number"),
                 "device": device_from_ad_id(ad_id),
-                "status": cell("status"),
+                "status": status,
                 "start_date": normalize_optional_date(cell("start_date")),
                 "end_date": normalize_optional_date(cell("end_date")),
                 "comment": cell("comment"),

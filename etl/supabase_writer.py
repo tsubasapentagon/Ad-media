@@ -55,7 +55,8 @@ def build_ingest_payload(result: dict[str, Any], start_date: str, end_date: str,
         known_ads.add(key)
         ads.append({
             "media": row["media"], "ad_id": row["ad_id"], "device": row["device"],
-            "placement": row["placement"], "cv_point": row.get("cv_point"),
+            "placement": row["placement"], "placement_detail": row.get("placement_detail", row["placement"]),
+            "cv_point": row.get("cv_point"),
             "lp_number": row.get("lp_number"), "destination": row.get("destination"),
             "comment": row.get("comment"), "category": row.get("category"),
             "subcategory": row.get("subcategory"), "status": row.get("status", ""),

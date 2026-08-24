@@ -6,11 +6,19 @@ from ad_master import (
     device_from_ad_id,
     load_all_ad_records,
     normalize_category_mapping,
+    normalize_placement,
     normalize_sheet_values,
 )
 
 
 class AdMasterTest(unittest.TestCase):
+    def test_normalizes_placement_groups(self):
+        self.assertEqual(normalize_placement("直LP（ガクチカ深掘り）"), "直LP")
+        self.assertEqual(normalize_placement("直Ｌ"), "直L")
+        self.assertEqual(normalize_placement("1直L"), "直L")
+        self.assertEqual(normalize_placement("記事内310948"), "記事内")
+        self.assertEqual(normalize_placement("見出し2_pc"), "見出し2_pc")
+
     def test_device_is_derived_from_id_suffix(self):
         self.assertEqual(device_from_ad_id("CenterD2003_sp"), "SP")
         self.assertEqual(device_from_ad_id("CenterD2003_PC"), "PC")
@@ -26,7 +34,7 @@ class AdMasterTest(unittest.TestCase):
         self.assertEqual(normalize_sheet_values(values, SOURCE_CONFIG[0]), [{
             "media": "Digmedia", "ad_id": "CenterD2003_sp", "category": "",
             "subcategory": "自己分析",
-            "placement": "見出し5", "cv_point": "会員登録", "lp_number": "12", "device": "SP",
+            "placement": "見出し5", "placement_detail": "見出し5", "cv_point": "会員登録", "lp_number": "12", "device": "SP",
             "status": "稼働中", "start_date": "20260305", "end_date": None, "comment": "",
         }])
 
