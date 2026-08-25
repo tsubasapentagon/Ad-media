@@ -419,10 +419,31 @@ grant execute on function public.read_category_settings(text) to anon;
 
 create or replace function public.write_category_setting(p_access_token text,p_action text,p_payload jsonb) returns void
 language plpgsql security definer set search_path='' as $$
-declare v_category_id bigint; v_subcategory_id bigint;
+declare v_category_id bigint; v_subcategory_id bigint; v_selection jsonb;
 begin
   if not exists (select 1 from private.dashboard_api_tokens where active and token_hash=encode(extensions.digest(p_access_token,'sha256'),'hex')) then raise exception 'not authorized'; end if;
-  if p_action='category' then
+  if p_action='save_bundle' then
+    if nullif(trim(p_payload->>'name'),'') is null then raise exception '共通カテゴリ名が必要です'; end if;
+    if jsonb_array_length(coalesce(p_payload->'selections','[]'::jsonb))=0 then raise exception '媒体と小カテゴリが必要です'; end if;
+    if nullif(p_payload->>'category_id','') is null then
+      insert into public.categories(name,display_order) values(trim(p_payload->>'name'),coalesce((select max(display_order)+1 from public.categories),0)) returning id into v_category_id;
+    else
+      v_category_id=(p_payload->>'category_id')::bigint;
+      update public.categories set name=trim(p_payload->>'name') where id=v_category_id;
+      if not found then raise exception '共通カテゴリが見つかりません'; end if;
+      delete from public.category_mappings where category_id=v_category_id;
+    end if;
+    for v_selection in select value from jsonb_array_elements(p_payload->'selections') loop
+      insert into public.category_mappings(media,original_category,original_subcategory,category_id,subcategory_id)
+      values((v_selection->>'media')::public.media_key,v_selection->>'original_category',coalesce(v_selection->>'original_subcategory',''),v_category_id,null)
+      on conflict(media,original_category,original_subcategory) do update set category_id=excluded.category_id,subcategory_id=null;
+    end loop;
+  elsif p_action='delete_bundle' then
+    v_category_id=(p_payload->>'category_id')::bigint;
+    delete from public.category_mappings where category_id=v_category_id;
+    delete from public.subcategories where category_id=v_category_id;
+    delete from public.categories where id=v_category_id;
+  elsif p_action='category' then
     if nullif(trim(p_payload->>'name'),'') is null then raise exception 'カテゴリ名が必要です'; end if;
     insert into public.categories(name,display_order) values(trim(p_payload->>'name'),coalesce((select max(display_order)+1 from public.categories),0)) on conflict(name) do nothing;
   elsif p_action='subcategory' then
