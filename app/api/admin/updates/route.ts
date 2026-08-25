@@ -1,13 +1,14 @@
 import {requireAdmin} from "@/lib/admin-auth";
 
-const allowed=new Set(["ad_master","pv","clicks","cv"]);
+const allowed=new Set(["ad_master","pv","clicks","cv","daily"]);
 
 export async function POST(request:Request){
   const denied=requireAdmin(request);if(denied)return denied;
   try{
     const body=await request.json() as {mode?:string;targets?:string[];startDate?:string;endDate?:string};
-    const targets=body.mode==="all"?["all"]:Array.isArray(body.targets)?[...new Set(body.targets)]:[];
+    let targets=body.mode==="all"?["all"]:Array.isArray(body.targets)?[...new Set(body.targets)]:[];
     if(!targets.length||(targets[0]!=="all"&&targets.some(value=>!allowed.has(value))))return Response.json({error:"更新対象が不正です"},{status:400});
+    if(targets.includes("daily"))targets=["all"];
     if(targets.some(value=>value!=="ad_master")){
       const start=new Date(`${body.startDate}T00:00:00Z`),end=new Date(`${body.endDate}T00:00:00Z`),yesterday=new Date();yesterday.setUTCHours(0,0,0,0);yesterday.setUTCDate(yesterday.getUTCDate()-1);
       const days=(end.getTime()-start.getTime())/86400000+1;
