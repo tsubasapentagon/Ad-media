@@ -38,12 +38,14 @@ test("server-renders the advertising dashboard", async () => {
 });
 
 test("keeps the selected design and removes prototype variants", async () => {
-  const [dashboard, sidebar, page, adsPage, weeklyPage] = await Promise.all([
+  const [dashboard, sidebar, page, adsPage, weeklyPage, categoriesPage, logsPage] = await Promise.all([
     readFile(new URL("../app/Dashboard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_components/AppFrame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/ads/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/weekly/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/categories/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/logs/page.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(dashboard, /カテゴリ/);
   assert.match(dashboard, /小カテゴリ/);
@@ -55,4 +57,6 @@ test("keeps the selected design and removes prototype variants", async () => {
   assert.match(page, /redirect\("\/analysis"\)/);
   assert.match(adsPage, /view="ads"/);
   assert.match(weeklyPage, /view="weekly"/);
+  assert.match(categoriesPage, /CategorySettings/);
+  assert.match(logsPage, /UpdateLogs/);
 });

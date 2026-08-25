@@ -246,21 +246,28 @@ create or replace function public.get_dashboard_performance(
   p_offset integer default 0
 ) returns jsonb
 language sql stable security definer set search_path='' as $$
-with selected_ads as materialized (
-  select * from public.ads a
+with available_ads as materialized (
+  select a.media,a.ad_id,a.device,a.placement,a.cv_point,a.comment,a.start_date,a.end_date,a.status,
+    coalesce(c.name,a.category) category,coalesce(s.name,a.subcategory) subcategory
+  from public.ads a
+  left join public.category_mappings cm on cm.media=a.media and cm.original_category=coalesce(a.category,'未設定') and cm.original_subcategory=coalesce(a.subcategory,'')
+  left join public.categories c on c.id=cm.category_id
+  left join public.subcategories s on s.id=cm.subcategory_id
   where a.is_current
     and a.status <> '作成なし'
     and (a.start_date is null or a.start_date <= p_end_date)
     and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text = p_media)
-    and (p_category is null or a.category = p_category)
-    and (p_subcategory is null or a.subcategory = p_subcategory)
     and (p_placement is null
       or (p_placement='__standard__' and a.placement not in ('直L','直LP','記事内'))
       or (p_placement='__direct__' and a.placement in ('直L','直LP'))
       or (p_placement like '__multi__:%' and a.placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb)))
       or a.placement = p_placement)
     and (p_search is null or concat_ws(' ',a.ad_id,a.placement,a.cv_point,a.comment) ilike '%'||p_search||'%')
+), selected_ads as materialized (
+  select * from available_ads a
+  where (p_category is null or a.category=p_category)
+    and (p_subcategory is null or a.subcategory=p_subcategory)
 ), metric_totals as materialized (
   select m.media,m.ad_id,sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
   from public.ad_daily_metrics m
@@ -281,9 +288,9 @@ select jsonb_build_object(
   'rows',coalesce((select jsonb_agg(to_jsonb(r) order by r.clicks desc,r.ad_id) from (select * from performance order by clicks desc,ad_id limit least(greatest(p_limit,1),500) offset greatest(p_offset,0)) r),'[]'::jsonb),
   'totals',coalesce((select jsonb_build_object('impressions',sum(impressions),'clicks',sum(clicks),'cv',sum(cv),'gradCv',sum(grad_cv)) from performance),'{}'::jsonb),
   'options',jsonb_build_object(
-    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or (p_placement like '__multi__:%' and placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb))) or placement=p_placement) and category is not null and category<>'') x),'[]'::jsonb),
-    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or (p_placement like '__multi__:%' and placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb))) or placement=p_placement) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
-    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or (p_placement like '__multi__:%' and placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb))) or placement=p_placement) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
+    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from available_ads where category is not null and category<>'') x),'[]'::jsonb),
+    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from available_ads where (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
+    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from available_ads where (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
   ),
   'lastUpdated',(select max(finished_at) from public.sync_runs where status='success'),
   'rowCount',(select count(*) from performance),
@@ -299,19 +306,24 @@ create or replace function public.get_dashboard_trends(
   p_subcategory text default null,p_placement text default null,p_graduation_year smallint default 2028
 ) returns jsonb
 language sql stable security definer set search_path='' as $$
-with selected_ads as materialized (
-  select * from public.ads a where a.is_current
+with available_ads as materialized (
+  select a.media,a.ad_id,a.device,a.placement,coalesce(c.name,a.category) category,coalesce(s.name,a.subcategory) subcategory
+  from public.ads a
+  left join public.category_mappings cm on cm.media=a.media and cm.original_category=coalesce(a.category,'未設定') and cm.original_subcategory=coalesce(a.subcategory,'')
+  left join public.categories c on c.id=cm.category_id
+  left join public.subcategories s on s.id=cm.subcategory_id
+  where a.is_current
     and a.status <> '作成なし'
     and (a.start_date is null or a.start_date <= p_end_date)
     and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text=p_media)
-    and (p_category is null or a.category=p_category)
-    and (p_subcategory is null or a.subcategory=p_subcategory)
     and (p_placement is null
       or (p_placement='__standard__' and a.placement not in ('直L','直LP','記事内'))
       or (p_placement='__direct__' and a.placement in ('直L','直LP'))
       or (p_placement like '__multi__:%' and a.placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb)))
       or a.placement=p_placement)
+), selected_ads as materialized (
+  select * from available_ads a where (p_category is null or a.category=p_category) and (p_subcategory is null or a.subcategory=p_subcategory)
 ), metric_by_ad as materialized (
   select date_trunc('week',m.metric_date)::date week_start,m.media,m.ad_id,
     sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
@@ -387,6 +399,65 @@ end;
 $$;
 revoke all on function public.log_failed_sync(text,text) from public,anon,authenticated;
 grant execute on function public.log_failed_sync(text,text) to service_role;
+
+create or replace function public.read_category_settings(p_access_token text) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+begin
+  if not exists (select 1 from private.dashboard_api_tokens where active and token_hash=encode(extensions.digest(p_access_token,'sha256'),'hex')) then raise exception 'not authorized'; end if;
+  return jsonb_build_object(
+    'categories',coalesce((select jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'subcategories',coalesce((select jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) order by s.display_order,s.name) from public.subcategories s where s.category_id=c.id),'[]'::jsonb)) order by c.display_order,c.name) from public.categories c),'[]'::jsonb),
+    'sources',coalesce((select jsonb_agg(to_jsonb(x) order by x.media,x.original_category,x.original_subcategory) from (
+      select a.media::text media,coalesce(a.category,'未設定') original_category,coalesce(a.subcategory,'') original_subcategory,count(*)::integer ad_count,m.category_id,m.subcategory_id
+      from public.ads a left join public.category_mappings m on m.media=a.media and m.original_category=coalesce(a.category,'未設定') and m.original_subcategory=coalesce(a.subcategory,'')
+      where a.is_current group by 1,2,3,5,6
+    ) x),'[]'::jsonb)
+  );
+end;
+$$;
+revoke all on function public.read_category_settings(text) from public,authenticated;
+grant execute on function public.read_category_settings(text) to anon;
+
+create or replace function public.write_category_setting(p_access_token text,p_action text,p_payload jsonb) returns void
+language plpgsql security definer set search_path='' as $$
+declare v_category_id bigint; v_subcategory_id bigint;
+begin
+  if not exists (select 1 from private.dashboard_api_tokens where active and token_hash=encode(extensions.digest(p_access_token,'sha256'),'hex')) then raise exception 'not authorized'; end if;
+  if p_action='category' then
+    if nullif(trim(p_payload->>'name'),'') is null then raise exception 'カテゴリ名が必要です'; end if;
+    insert into public.categories(name,display_order) values(trim(p_payload->>'name'),coalesce((select max(display_order)+1 from public.categories),0)) on conflict(name) do nothing;
+  elsif p_action='subcategory' then
+    v_category_id=(p_payload->>'category_id')::bigint;
+    if nullif(trim(p_payload->>'name'),'') is null then raise exception '小カテゴリ名が必要です'; end if;
+    insert into public.subcategories(category_id,name,display_order) values(v_category_id,trim(p_payload->>'name'),coalesce((select max(display_order)+1 from public.subcategories where category_id=v_category_id),0)) on conflict(category_id,name) do nothing;
+  elsif p_action='mapping' then
+    if nullif(p_payload->>'category_id','') is null then
+      delete from public.category_mappings where media=(p_payload->>'media')::public.media_key and original_category=p_payload->>'original_category' and original_subcategory=coalesce(p_payload->>'original_subcategory','');
+      return;
+    end if;
+    v_category_id=(p_payload->>'category_id')::bigint;
+    v_subcategory_id=nullif(p_payload->>'subcategory_id','')::bigint;
+    if v_subcategory_id is not null and not exists(select 1 from public.subcategories where id=v_subcategory_id and category_id=v_category_id) then raise exception '小カテゴリが親カテゴリと一致しません'; end if;
+    insert into public.category_mappings(media,original_category,original_subcategory,category_id,subcategory_id)
+    values((p_payload->>'media')::public.media_key,p_payload->>'original_category',coalesce(p_payload->>'original_subcategory',''),v_category_id,v_subcategory_id)
+    on conflict(media,original_category,original_subcategory) do update set category_id=excluded.category_id,subcategory_id=excluded.subcategory_id;
+  else raise exception 'unknown action'; end if;
+end;
+$$;
+revoke all on function public.write_category_setting(text,text,jsonb) from public,authenticated;
+grant execute on function public.write_category_setting(text,text,jsonb) to anon;
+
+create or replace function public.read_sync_history(p_access_token text,p_limit integer default 50) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+begin
+  if not exists (select 1 from private.dashboard_api_tokens where active and token_hash=encode(extensions.digest(p_access_token,'sha256'),'hex')) then raise exception 'not authorized'; end if;
+  return jsonb_build_object('runs',coalesce((select jsonb_agg(to_jsonb(r) order by r.id desc) from (
+    select sr.*,coalesce((select jsonb_agg(jsonb_build_object('issue_type',si.issue_type,'media',si.media,'source_id',si.source_id,'details',si.details) order by si.id) from public.sync_issues si where si.sync_run_id=sr.id),'[]'::jsonb) issues
+    from public.sync_runs sr order by sr.id desc limit least(greatest(p_limit,1),100)
+  ) r),'[]'::jsonb));
+end;
+$$;
+revoke all on function public.read_sync_history(text,integer) from public,authenticated;
+grant execute on function public.read_sync_history(text,integer) to anon;
 
 insert into public.profiles(user_id,email,role)
 select id,lower(email),'admin'::public.app_role from auth.users where lower(email)='t-kobayashi@hr-team.co.jp'
