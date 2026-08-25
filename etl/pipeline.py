@@ -10,14 +10,16 @@ from daily_metrics import build_daily_metrics
 from pv import load_all_pv_records
 
 
-def run_pipeline(spread_init: Callable, get_ga4: Callable, start_date: str, end_date: str, target: str = "all"):
+def run_pipeline(spread_init: Callable, get_ga4: Callable, start_date: str, end_date: str, targets: set[str] | None = None):
+    targets = targets or {"all"}
     # 実績は期間指定だが、広告マスターは必ず3メディア全件を毎回読み直す。
     ads = load_all_ad_records(spread_init)
-    if target == "ad_master":
+    if targets == {"ad_master"}:
         return {"ads": ads, "pv": [], "clicks": [], "cv": [], "daily_metrics": [], "cv_by_grad": []}
-    pv = load_all_pv_records(spread_init, get_ga4, start_date, end_date)
-    clicks = load_all_click_records(spread_init, get_ga4, start_date, end_date, ad_records=ads)
-    cvs = load_all_cv_records(spread_init, start_date, end_date, ad_records=ads)
+    full = "all" in targets
+    pv = load_all_pv_records(spread_init, get_ga4, start_date, end_date) if full or "pv" in targets else []
+    clicks = load_all_click_records(spread_init, get_ga4, start_date, end_date, ad_records=ads) if full or "clicks" in targets else []
+    cvs = load_all_cv_records(spread_init, start_date, end_date, ad_records=ads) if full or "cv" in targets else []
     daily_metrics, cv_by_grad = build_daily_metrics(ads, pv, clicks, cvs)
     return {
         "ads": ads,

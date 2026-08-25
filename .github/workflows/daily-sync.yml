@@ -11,12 +11,11 @@ on:
     - cron: "0 0 * * *" # 09:00 JST
   workflow_dispatch:
     inputs:
-      sync_target:
-        description: "更新対象"
+      sync_targets:
+        description: "更新対象（all または ad_master,pv,clicks,cv）"
         required: true
         default: "all"
-        type: choice
-        options: [all, ad_master]
+        type: string
       start_date:
         description: "開始日（未指定なら先月1日）"
         required: false
@@ -51,5 +50,5 @@ jobs:
           SYNC_START_DATE: ${{ inputs.start_date }}
           SYNC_END_DATE: ${{ inputs.end_date }}
           SYNC_TRIGGER: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'schedule' }}
-          SYNC_TARGET: ${{ inputs.sync_target || 'all' }}
+          SYNC_TARGETS: ${{ inputs.sync_targets || 'all' }}
         run: python etl/sync.py

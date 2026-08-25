@@ -77,9 +77,20 @@ class SupabaseWriterTest(unittest.TestCase):
         def post(url,**kwargs): calls.append(url); return FakeResponse()
         writer=SupabaseWriter("https://example.supabase.co","secret",post=post)
         result={"ads":[{"media":"Digmedia","ad_id":"a_sp","device":"SP","placement":"見出し1"}],"daily_metrics":[],"cv_by_grad":[]}
-        writer.save(result,"20260819","20260819","manual","ad_master")
+        writer.save(result,"20260819","20260819","manual",{"ad_master"})
         self.assertTrue(calls[0].endswith("/rpc/sync_ad_master"))
         self.assertFalse(any(url.endswith("/rpc/replace_ad_metrics") for url in calls))
+
+    def test_click_target_uses_component_rpc_and_preserves_other_columns(self):
+        calls=[]
+        def post(url,**kwargs): calls.append((url,kwargs["json"])); return FakeResponse()
+        writer=SupabaseWriter("https://example.supabase.co","secret",post=post)
+        result={"ads":[{"media":"Digmedia","ad_id":"a_sp","device":"SP","placement":"見出し1"}],"daily_metrics":[],"cv_by_grad":[]}
+        writer.save(result,"20260819","20260819","manual",{"clicks"})
+        component=[call for call in calls if call[0].endswith("/rpc/replace_ad_metric_components")][0]
+        self.assertEqual(component[1]["p_components"],["clicks"])
+        self.assertEqual(component[1]["p_metrics"],[])
+        self.assertFalse(any(url.endswith("/rpc/sync_ad_master") for url,_ in calls))
 
 
 if __name__ == "__main__": unittest.main()

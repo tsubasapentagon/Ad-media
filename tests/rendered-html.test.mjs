@@ -66,5 +66,5 @@ test("keeps the selected design and removes prototype variants", async () => {
   assert.match(logsPage, /UpdateLogs/);
   assert.match(updatesPage, /UpdateMenu/);
   assert.match(updateMenu, /広告マスター/);
-  assert.match(updateMenu, /分析データ/);
+  assert.match(updateMenu, /カスタム更新/);
 });

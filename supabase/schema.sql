@@ -491,3 +491,21 @@ grant execute on function public.read_sync_history(text,integer) to anon;
 insert into public.profiles(user_id,email,role)
 select id,lower(email),'admin'::public.app_role from auth.users where lower(email)='t-kobayashi@hr-team.co.jp'
 on conflict(user_id) do update set role='admin';
+-- カスタム更新では、選択した指標列だけを入れ替え、未選択の列を保持する。
+create or replace function public.replace_ad_metric_components(
+  p_metric_date date, p_components text[], p_metrics jsonb, p_grad_metrics jsonb
+) returns void language plpgsql security definer set search_path='' as $$
+begin
+  if not (p_components <@ array['pv','clicks','cv']::text[]) or cardinality(p_components)=0 then raise exception 'invalid metric components'; end if;
+  if 'pv'=any(p_components) then update public.ad_daily_metrics set impressions=0,allocation_status='対象PVなし' where metric_date=p_metric_date; end if;
+  if 'clicks'=any(p_components) then update public.ad_daily_metrics set clicks=0 where metric_date=p_metric_date; end if;
+  if 'cv'=any(p_components) then update public.ad_daily_metrics set cv=0 where metric_date=p_metric_date; delete from public.ad_daily_cv_by_grad where metric_date=p_metric_date; end if;
+  insert into public.ad_daily_metrics(metric_date,media,ad_id,impressions,clicks,cv,allocation_status)
+  select x.metric_date,x.media::public.media_key,x.ad_id,case when 'pv'=any(p_components) then x.impressions else 0 end,case when 'clicks'=any(p_components) then x.clicks else 0 end,case when 'cv'=any(p_components) then x.cv else 0 end,case when 'pv'=any(p_components) then x.allocation_status else '対象PVなし' end
+  from jsonb_to_recordset(p_metrics) as x(metric_date date,media text,ad_id text,impressions bigint,clicks bigint,cv bigint,allocation_status text)
+  join public.ads a on a.media=x.media::public.media_key and a.ad_id=x.ad_id where x.metric_date=p_metric_date
+  on conflict(metric_date,media,ad_id) do update set impressions=case when 'pv'=any(p_components) then excluded.impressions else public.ad_daily_metrics.impressions end,clicks=case when 'clicks'=any(p_components) then excluded.clicks else public.ad_daily_metrics.clicks end,cv=case when 'cv'=any(p_components) then excluded.cv else public.ad_daily_metrics.cv end,allocation_status=case when 'pv'=any(p_components) then excluded.allocation_status else public.ad_daily_metrics.allocation_status end;
+  if 'cv'=any(p_components) then insert into public.ad_daily_cv_by_grad(metric_date,media,ad_id,graduation_year,cv) select x.metric_date,x.media::public.media_key,x.ad_id,x.graduation_year,x.cv from jsonb_to_recordset(p_grad_metrics) as x(metric_date date,media text,ad_id text,graduation_year smallint,cv bigint) join public.ads a on a.media=x.media::public.media_key and a.ad_id=x.ad_id where x.metric_date=p_metric_date; end if;
+end $$;
+revoke all on function public.replace_ad_metric_components(date,text[],jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.replace_ad_metric_components(date,text[],jsonb,jsonb) to service_role;
