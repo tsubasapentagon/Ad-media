@@ -429,6 +429,14 @@ begin
     v_category_id=(p_payload->>'category_id')::bigint;
     if nullif(trim(p_payload->>'name'),'') is null then raise exception '小カテゴリ名が必要です'; end if;
     insert into public.subcategories(category_id,name,display_order) values(v_category_id,trim(p_payload->>'name'),coalesce((select max(display_order)+1 from public.subcategories where category_id=v_category_id),0)) on conflict(category_id,name) do nothing;
+  elsif p_action='rename_category' then
+    update public.categories set name=trim(p_payload->>'name') where id=(p_payload->>'category_id')::bigint;
+  elsif p_action='rename_subcategory' then
+    update public.subcategories set name=trim(p_payload->>'name') where id=(p_payload->>'subcategory_id')::bigint;
+  elsif p_action='delete_category' then
+    delete from public.categories where id=(p_payload->>'category_id')::bigint;
+  elsif p_action='delete_subcategory' then
+    delete from public.subcategories where id=(p_payload->>'subcategory_id')::bigint;
   elsif p_action='mapping' then
     if nullif(p_payload->>'category_id','') is null then
       delete from public.category_mappings where media=(p_payload->>'media')::public.media_key and original_category=p_payload->>'original_category' and original_subcategory=coalesce(p_payload->>'original_subcategory','');
