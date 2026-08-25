@@ -258,6 +258,7 @@ with selected_ads as materialized (
     and (p_placement is null
       or (p_placement='__standard__' and a.placement not in ('直L','直LP','記事内'))
       or (p_placement='__direct__' and a.placement in ('直L','直LP'))
+      or (p_placement like '__multi__:%' and a.placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb)))
       or a.placement = p_placement)
     and (p_search is null or concat_ws(' ',a.ad_id,a.placement,a.cv_point,a.comment) ilike '%'||p_search||'%')
 ), metric_totals as materialized (
@@ -280,9 +281,9 @@ select jsonb_build_object(
   'rows',coalesce((select jsonb_agg(to_jsonb(r) order by r.clicks desc,r.ad_id) from (select * from performance order by clicks desc,ad_id limit least(greatest(p_limit,1),500) offset greatest(p_offset,0)) r),'[]'::jsonb),
   'totals',coalesce((select jsonb_build_object('impressions',sum(impressions),'clicks',sum(clicks),'cv',sum(cv),'gradCv',sum(grad_cv)) from performance),'{}'::jsonb),
   'options',jsonb_build_object(
-    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or placement=p_placement) and category is not null and category<>'') x),'[]'::jsonb),
-    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or placement=p_placement) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
-    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or placement=p_placement) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
+    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or (p_placement like '__multi__:%' and placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb))) or placement=p_placement) and category is not null and category<>'') x),'[]'::jsonb),
+    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or (p_placement like '__multi__:%' and placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb))) or placement=p_placement) and (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
+    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from public.ads where is_current and status<>'作成なし' and (start_date is null or start_date<=p_end_date) and (end_date is null or end_date>=p_start_date) and (p_media is null or media::text=p_media) and (p_placement is null or (p_placement='__standard__' and placement not in ('直L','直LP','記事内')) or (p_placement='__direct__' and placement in ('直L','直LP')) or (p_placement like '__multi__:%' and placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb))) or placement=p_placement) and (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
   ),
   'lastUpdated',(select max(finished_at) from public.sync_runs where status='success'),
   'rowCount',(select count(*) from performance),
@@ -309,6 +310,7 @@ with selected_ads as materialized (
     and (p_placement is null
       or (p_placement='__standard__' and a.placement not in ('直L','直LP','記事内'))
       or (p_placement='__direct__' and a.placement in ('直L','直LP'))
+      or (p_placement like '__multi__:%' and a.placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb)))
       or a.placement=p_placement)
 ), metric_by_ad as materialized (
   select date_trunc('week',m.metric_date)::date week_start,m.media,m.ad_id,

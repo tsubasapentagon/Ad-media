@@ -8,6 +8,7 @@ export async function GET(request:Request){
   const offset=Math.max(0,Number(url.searchParams.get("offset")||0));
   const scope=url.searchParams.get("scope");
   const scopePlacement=scope==="standard"?"__standard__":scope==="direct"?"__direct__":scope==="article"?"記事内":undefined;
-  try{return Response.json(await fetchDashboardSnapshot({startDate,endDate,media:url.searchParams.get("media")||undefined,category:url.searchParams.get("category")||undefined,subcategory:url.searchParams.get("subcategory")||undefined,placement:url.searchParams.get("placement")||scopePlacement,search:url.searchParams.get("search")||undefined,limit:100,offset}));}
+  const placements=url.searchParams.getAll("placement"),placement=placements.length?`__multi__:${JSON.stringify(placements)}`:scopePlacement;
+  try{return Response.json(await fetchDashboardSnapshot({startDate,endDate,media:url.searchParams.get("media")||undefined,category:url.searchParams.get("category")||undefined,subcategory:url.searchParams.get("subcategory")||undefined,placement,search:url.searchParams.get("search")||undefined,limit:100,offset}));}
   catch(error){return Response.json({error:error instanceof Error?error.message:"分析データを取得できませんでした"},{status:500});}
 }
