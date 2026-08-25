@@ -3,13 +3,15 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
+  process.env.DASHBOARD_LOGIN_EMAIL = "t-kobayashi@hr-team.co.jp";
+  process.env.DASHBOARD_LOGIN_PASSWORD = "test-password";
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
     new Request("http://localhost/analysis", {
-      headers: { accept: "text/html", "oai-authenticated-user-id":"test-user", "oai-authenticated-user-email":"t-kobayashi@hr-team.co.jp" },
+      headers: { accept: "text/html", authorization:`Basic ${Buffer.from("t-kobayashi@hr-team.co.jp:test-password").toString("base64")}` },
     }),
     {
       ASSETS: {
