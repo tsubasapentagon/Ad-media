@@ -126,12 +126,13 @@ class SupabaseWriter:
                 self.sleep(2 ** attempt)
         raise AssertionError("unreachable")
 
-    def save(self, result: dict[str, Any], start_date: str, end_date: str, trigger: str = "schedule") -> Any:
+    def save(self, result: dict[str, Any], start_date: str, end_date: str, trigger: str = "schedule", target: str = "all") -> Any:
         payload = build_ingest_payload(result, start_date, end_date, trigger)
         try:
             # 広告マスターは毎回全件更新する。日別実績とは分離し、巨大な
             # JSON/長時間トランザクションで無料枠DBを圧迫しないようにする。
-            self._idempotent_rpc("sync_ad_master", {"p_ads": payload["p_ads"]})
+            if target in ("all", "ad_master"):
+                self._idempotent_rpc("sync_ad_master", {"p_ads": payload["p_ads"]})
 
             metrics_by_date: dict[str, list[dict[str, Any]]] = {}
             for row in payload["p_metrics"]:
@@ -140,22 +141,23 @@ class SupabaseWriter:
             for row in payload["p_grad_metrics"]:
                 grad_by_date.setdefault(row["metric_date"], []).append(row)
 
-            current = datetime.strptime(payload["p_start_date"], "%Y-%m-%d").date()
-            end = datetime.strptime(payload["p_end_date"], "%Y-%m-%d").date()
-            while current <= end:
-                day = current.isoformat()
-                self._idempotent_rpc("replace_ad_metrics", {
-                    "p_start_date": day,
-                    "p_end_date": day,
-                    "p_metrics": metrics_by_date.get(day, []),
-                    "p_grad_metrics": grad_by_date.get(day, []),
-                })
-                current += timedelta(days=1)
+            if target == "all":
+                current = datetime.strptime(payload["p_start_date"], "%Y-%m-%d").date()
+                end = datetime.strptime(payload["p_end_date"], "%Y-%m-%d").date()
+                while current <= end:
+                    day = current.isoformat()
+                    self._idempotent_rpc("replace_ad_metrics", {
+                        "p_start_date": day,
+                        "p_end_date": day,
+                        "p_metrics": metrics_by_date.get(day, []),
+                        "p_grad_metrics": grad_by_date.get(day, []),
+                    })
+                    current += timedelta(days=1)
 
             return self._rpc("record_sync_success", {
                 "p_trigger": trigger,
-                "p_ads_count": len(payload["p_ads"]),
-                "p_metrics_count": len(payload["p_metrics"]),
+                "p_ads_count": len(payload["p_ads"]) if target in ("all", "ad_master") else 0,
+                "p_metrics_count": len(payload["p_metrics"]) if target == "all" else 0,
                 "p_issues": payload["p_issues"],
             })
         except Exception as error:

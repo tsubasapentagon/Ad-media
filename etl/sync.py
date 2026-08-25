@@ -38,9 +38,14 @@ def main() -> None:
         raise RuntimeError("Missing required secrets: " + ", ".join(missing))
     start_date, end_date = sync_range_from_environment()
     trigger = os.getenv("SYNC_TRIGGER", "schedule")
-    print(f"広告データ更新: {start_date} 〜 {end_date}")
-    result = run_pipeline(spread_init, get_ga4, start_date, end_date)
-    run_id = SupabaseWriter.from_environment().save(result, start_date, end_date, trigger)
+    target = os.getenv("SYNC_TARGET", "all")
+    if target not in ("all", "ad_master"):
+        raise RuntimeError("SYNC_TARGETが不正です")
+    print(f"広告データ更新: target={target} / {start_date} 〜 {end_date}")
+    result = run_pipeline(spread_init, get_ga4, start_date, end_date, target)
+    if target == "all" and not result["daily_metrics"]:
+        raise RuntimeError("分析データが0件のため、既存データを保護して更新を中止しました")
+    run_id = SupabaseWriter.from_environment().save(result, start_date, end_date, trigger, target)
     print(f"広告データ更新完了: run_id={run_id}")
 
 if __name__ == "__main__": main()
