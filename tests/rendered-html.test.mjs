@@ -3,16 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
-  process.env.DASHBOARD_LOGIN_EMAIL = "t-kobayashi@hr-team.co.jp";
-  process.env.DASHBOARD_LOGIN_PASSWORD = "test-password";
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/analysis", {
-      headers: { accept: "text/html", authorization:`Basic ${Buffer.from("t-kobayashi@hr-team.co.jp:test-password").toString("base64")}` },
-    }),
+    new Request("http://localhost/login", { headers: { accept: "text/html" } }),
     {
       ASSETS: {
         fetch: async () => new Response("Not found", { status: 404 }),
@@ -25,7 +21,7 @@ async function render() {
   );
 }
 
-test("server-renders the advertising dashboard", async () => {
+test("server-renders the company Google login", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -33,9 +29,9 @@ test("server-renders the advertising dashboard", async () => {
   const html = await response.text();
   assert.match(html, /<title>小林広告分析ver\.2<\/title>/i);
   assert.match(html, /小林広告分析/);
-  assert.match(html, /広告分析概要/);
-  assert.match(html, /週次分析/);
-  assert.match(html, /広告一覧/);
+  assert.match(html, /会社アカウントでログイン/);
+  assert.match(html, /Googleアカウントでログイン/);
+  assert.match(html, /@hr-team\.co\.jp/);
   assert.doesNotMatch(html, /UI PROTOTYPE|画面案を切り替え/);
 });
 

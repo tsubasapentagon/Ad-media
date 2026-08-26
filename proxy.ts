@@ -1,12 +1,48 @@
+import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminEmail, isCompanyUser } from "@/lib/auth-policy";
 
-function sameText(left:string,right:string){if(left.length!==right.length)return false;let difference=0;for(let index=0;index<left.length;index+=1)difference|=left.charCodeAt(index)^right.charCodeAt(index);return difference===0}
+const PUBLIC_PATHS = new Set(["/login", "/auth/google", "/auth/callback", "/auth/signout"]);
+const ADMIN_PATHS = new Set(["/categories", "/updates", "/logs", "/users"]);
 
-export function proxy(request:NextRequest){
-  const allowedEmail=process.env.DASHBOARD_LOGIN_EMAIL,allowedPassword=process.env.DASHBOARD_LOGIN_PASSWORD;
-  if(!allowedEmail||!allowedPassword)return new NextResponse("ログイン設定がありません",{status:503});
-  const authorization=request.headers.get("authorization");
-  if(authorization?.startsWith("Basic ")){try{const decoded=atob(authorization.slice(6)),separator=decoded.indexOf(":"),email=decoded.slice(0,separator).toLowerCase(),password=decoded.slice(separator+1);if(separator>0&&sameText(email,allowedEmail.toLowerCase())&&sameText(password,allowedPassword)){const headers=new Headers(request.headers);headers.set("x-dashboard-admin","1");return NextResponse.next({request:{headers}})}}catch{/* Invalid credentials. */}}
-  return new NextResponse("ログインしてください",{status:401,headers:{"WWW-Authenticate":'Basic realm="Kobayashi Ad Analytics", charset="UTF-8"'}});
+export async function proxy(request: NextRequest) {
+  let response = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
+  if (PUBLIC_PATHS.has(pathname)) return response;
+  const supabase = createServerClient(
+    requiredEnv("SUPABASE_URL"),
+    requiredEnv("SUPABASE_PUBLISHABLE_KEY"),
+    {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        },
+      },
+    },
+  );
+
+  const { data } = await supabase.auth.getUser();
+  if (!isCompanyUser(data.user)) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
+  if (ADMIN_PATHS.has(pathname) && !isAdminEmail(data.user.email)) {
+    return NextResponse.redirect(new URL("/analysis", request.url));
+  }
+
+  return response;
 }
-export const config={matcher:["/((?!_next/static|_next/image|favicon.svg).*)"]};
+
+function requiredEnv(name: "SUPABASE_URL" | "SUPABASE_PUBLISHABLE_KEY") {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not configured`);
+  return value;
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+};

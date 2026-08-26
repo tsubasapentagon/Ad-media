@@ -3,7 +3,7 @@ import {requireAdmin} from "@/lib/admin-auth";
 const allowed=new Set(["ad_master","pv","clicks","cv"]);
 
 export async function POST(request:Request){
-  const denied=requireAdmin(request);if(denied)return denied;
+  const denied=await requireAdmin();if(denied)return denied;
   try{
     const body=await request.json() as {mode?:string;targets?:string[];startDate?:string;endDate?:string};
     const targets=body.mode==="all"?["all"]:Array.isArray(body.targets)?[...new Set(body.targets)]:[];
