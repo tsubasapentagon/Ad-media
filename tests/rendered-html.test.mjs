@@ -36,7 +36,7 @@ test("server-renders the company Google login", async () => {
 });
 
 test("keeps the selected design and removes prototype variants", async () => {
-  const [dashboard, sidebar, page, adsPage, weeklyPage, categoriesPage, logsPage, updatesPage, updateMenu] = await Promise.all([
+  const [dashboard, sidebar, page, adsPage, weeklyPage, categoriesPage, logsPage, updatesPage, updateMenu, usersPage, userPermissions, schema, styles] = await Promise.all([
     readFile(new URL("../app/Dashboard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_components/AppFrame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -46,6 +46,10 @@ test("keeps the selected design and removes prototype variants", async () => {
     readFile(new URL("../app/logs/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/updates/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/updates/UpdateMenu.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/users/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/users/UserPermissions.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/schema.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(dashboard, /カテゴリ/);
   assert.match(dashboard, /小カテゴリ/);
@@ -63,4 +67,13 @@ test("keeps the selected design and removes prototype variants", async () => {
   assert.match(updatesPage, /UpdateMenu/);
   assert.match(updateMenu, /広告マスター/);
   assert.match(updateMenu, /カスタム更新/);
+  assert.match(dashboard, /共通カテゴリ/);
+  assert.match(dashboard, /設定・追加/);
+  assert.match(dashboard, /placement-options/);
+  assert.match(usersPage, /UserPermissions/);
+  assert.match(userPermissions, /閲覧者/);
+  assert.match(userPermissions, /管理者/);
+  assert.match(styles, /input\[type="checkbox"\]/);
+  assert.match(schema, /with candidate_ads as materialized/);
+  assert.match(schema, /select distinct placement from candidate_ads/);
 });

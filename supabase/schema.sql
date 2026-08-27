@@ -246,9 +246,11 @@ create or replace function public.get_dashboard_performance(
   p_offset integer default 0
 ) returns jsonb
 language sql stable security definer set search_path='' as $$
-with available_ads as materialized (
+with candidate_ads as materialized (
   select a.media,a.ad_id,a.device,a.placement,a.cv_point,a.comment,a.start_date,a.end_date,a.status,
-    coalesce(c.name,a.category) category,coalesce(s.name,a.subcategory) subcategory
+    cm.category_id,
+    case when p_media is null then coalesce(c.name,a.category) else a.category end category,
+    case when p_media is null then coalesce(s.name,a.subcategory) else a.subcategory end subcategory
   from public.ads a
   left join public.category_mappings cm on cm.media=a.media and cm.original_category=coalesce(a.category,'未設定') and cm.original_subcategory=coalesce(a.subcategory,'')
   left join public.categories c on c.id=cm.category_id
@@ -258,16 +260,27 @@ with available_ads as materialized (
     and (a.start_date is null or a.start_date <= p_end_date)
     and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text = p_media)
-    and (p_placement is null
+), selected_ads as materialized (
+  select * from candidate_ads a
+  where (p_category is null
+      or (p_media is null and a.category_id is not null and a.category=p_category)
+      or (p_media is not null and a.category=p_category))
+    and (p_media is null or p_subcategory is null or a.subcategory=p_subcategory)
+), filtered_ads as materialized (
+  select * from selected_ads a
+  where (p_placement is null
+      or (p_placement like '__filter__:%'
+        and (coalesce(substr(p_placement,12)::jsonb->>'scope','')=''
+          or (substr(p_placement,12)::jsonb->>'scope'='standard' and a.placement not in ('直L','直LP','記事内'))
+          or (substr(p_placement,12)::jsonb->>'scope'='direct' and a.placement in ('直L','直LP'))
+          or (substr(p_placement,12)::jsonb->>'scope'='article' and a.placement='記事内'))
+        and (jsonb_array_length(coalesce(substr(p_placement,12)::jsonb->'placements','[]'::jsonb))=0
+          or a.placement in (select jsonb_array_elements_text(coalesce(substr(p_placement,12)::jsonb->'placements','[]'::jsonb)))))
       or (p_placement='__standard__' and a.placement not in ('直L','直LP','記事内'))
       or (p_placement='__direct__' and a.placement in ('直L','直LP'))
       or (p_placement like '__multi__:%' and a.placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb)))
-      or a.placement = p_placement)
+      or a.placement=p_placement)
     and (p_search is null or concat_ws(' ',a.ad_id,a.placement,a.cv_point,a.comment) ilike '%'||p_search||'%')
-), selected_ads as materialized (
-  select * from available_ads a
-  where (p_category is null or a.category=p_category)
-    and (p_subcategory is null or a.subcategory=p_subcategory)
 ), metric_totals as materialized (
   select m.media,m.ad_id,sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv
   from public.ad_daily_metrics m
@@ -282,15 +295,32 @@ with available_ads as materialized (
   select a.media::text media,a.ad_id,a.device::text device,a.placement,a.cv_point destination,a.comment,a.start_date,a.end_date,
     coalesce(a.category,'未設定') category,coalesce(a.subcategory,'未設定') subcategory,a.status,
     coalesce(m.impressions,0) impressions,coalesce(m.clicks,0) clicks,coalesce(m.cv,0) cv,coalesce(g.grad_cv,0) grad_cv
-  from selected_ads a left join metric_totals m using(media,ad_id) left join grad_totals g using(media,ad_id)
+  from filtered_ads a left join metric_totals m using(media,ad_id) left join grad_totals g using(media,ad_id)
 )
 select jsonb_build_object(
   'rows',coalesce((select jsonb_agg(to_jsonb(r) order by r.clicks desc,r.ad_id) from (select * from performance order by clicks desc,ad_id limit least(greatest(p_limit,1),500) offset greatest(p_offset,0)) r),'[]'::jsonb),
   'totals',coalesce((select jsonb_build_object('impressions',sum(impressions),'clicks',sum(clicks),'cv',sum(cv),'gradCv',sum(grad_cv)) from performance),'{}'::jsonb),
   'options',jsonb_build_object(
-    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (select distinct category from available_ads where category is not null and category<>'') x),'[]'::jsonb),
-    'subcategories',coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (select distinct subcategory from available_ads where (p_category is null or category=p_category) and subcategory is not null and subcategory<>'') x),'[]'::jsonb),
-    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (select distinct placement from available_ads where (p_category is null or category=p_category) and (p_subcategory is null or subcategory=p_subcategory) and placement<>'') x),'[]'::jsonb)
+    'categories',coalesce((select jsonb_agg(x.category order by x.category) from (
+      select distinct category from candidate_ads
+      where category is not null and category<>'' and (p_media is not null or category_id is not null)
+    ) x),'[]'::jsonb),
+    'subcategories',case when p_media is null then '[]'::jsonb else coalesce((select jsonb_agg(x.subcategory order by x.subcategory) from (
+      select distinct subcategory from candidate_ads where (p_category is null or category=p_category) and subcategory is not null and subcategory<>''
+    ) x),'[]'::jsonb) end,
+    'placements',coalesce((select jsonb_agg(x.placement order by x.placement) from (
+      select distinct placement from candidate_ads
+      where (p_category is null
+          or (p_media is null and category_id is not null and category=p_category)
+          or (p_media is not null and category=p_category))
+        and (p_media is null or p_subcategory is null or subcategory=p_subcategory)
+        and (p_placement is null or p_placement not like '__filter__:%'
+          or coalesce(substr(p_placement,12)::jsonb->>'scope','')=''
+          or (substr(p_placement,12)::jsonb->>'scope'='standard' and placement not in ('直L','直LP','記事内'))
+          or (substr(p_placement,12)::jsonb->>'scope'='direct' and placement in ('直L','直LP'))
+          or (substr(p_placement,12)::jsonb->>'scope'='article' and placement='記事内'))
+        and placement<>''
+    ) x),'[]'::jsonb)
   ),
   'lastUpdated',(select max(finished_at) from public.sync_runs where status='success'),
   'rowCount',(select count(*) from performance),
@@ -306,8 +336,10 @@ create or replace function public.get_dashboard_trends(
   p_subcategory text default null,p_placement text default null,p_graduation_year smallint default 2028
 ) returns jsonb
 language sql stable security definer set search_path='' as $$
-with available_ads as materialized (
-  select a.media,a.ad_id,a.device,a.placement,coalesce(c.name,a.category) category,coalesce(s.name,a.subcategory) subcategory
+with candidate_ads as materialized (
+  select a.media,a.ad_id,a.device,a.placement,cm.category_id,
+    case when p_media is null then coalesce(c.name,a.category) else a.category end category,
+    case when p_media is null then coalesce(s.name,a.subcategory) else a.subcategory end subcategory
   from public.ads a
   left join public.category_mappings cm on cm.media=a.media and cm.original_category=coalesce(a.category,'未設定') and cm.original_subcategory=coalesce(a.subcategory,'')
   left join public.categories c on c.id=cm.category_id
@@ -317,13 +349,24 @@ with available_ads as materialized (
     and (a.start_date is null or a.start_date <= p_end_date)
     and (a.end_date is null or a.end_date >= p_start_date)
     and (p_media is null or a.media::text=p_media)
+), selected_ads as materialized (
+  select * from candidate_ads a
+  where (p_category is null
+      or (p_media is null and a.category_id is not null and a.category=p_category)
+      or (p_media is not null and a.category=p_category))
+    and (p_media is null or p_subcategory is null or a.subcategory=p_subcategory)
     and (p_placement is null
+      or (p_placement like '__filter__:%'
+        and (coalesce(substr(p_placement,12)::jsonb->>'scope','')=''
+          or (substr(p_placement,12)::jsonb->>'scope'='standard' and a.placement not in ('直L','直LP','記事内'))
+          or (substr(p_placement,12)::jsonb->>'scope'='direct' and a.placement in ('直L','直LP'))
+          or (substr(p_placement,12)::jsonb->>'scope'='article' and a.placement='記事内'))
+        and (jsonb_array_length(coalesce(substr(p_placement,12)::jsonb->'placements','[]'::jsonb))=0
+          or a.placement in (select jsonb_array_elements_text(coalesce(substr(p_placement,12)::jsonb->'placements','[]'::jsonb)))))
       or (p_placement='__standard__' and a.placement not in ('直L','直LP','記事内'))
       or (p_placement='__direct__' and a.placement in ('直L','直LP'))
       or (p_placement like '__multi__:%' and a.placement in (select jsonb_array_elements_text(substr(p_placement,11)::jsonb)))
       or a.placement=p_placement)
-), selected_ads as materialized (
-  select * from available_ads a where (p_category is null or a.category=p_category) and (p_subcategory is null or a.subcategory=p_subcategory)
 ), metric_by_ad as materialized (
   select date_trunc('week',m.metric_date)::date week_start,m.media,m.ad_id,
     sum(m.impressions)::bigint impressions,sum(m.clicks)::bigint clicks,sum(m.cv)::bigint cv

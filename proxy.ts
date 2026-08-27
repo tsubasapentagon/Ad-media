@@ -30,11 +30,20 @@ export async function proxy(request: NextRequest) {
     loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
   }
-  if (ADMIN_PATHS.has(pathname) && !isAdminEmail(data.user.email)) {
+  const { data: profile } = await supabase.from("profiles").select("role").eq("user_id", data.user.id).maybeSingle();
+  const isAdmin = isAdminEmail(data.user.email) || profile?.role === "admin";
+  if (ADMIN_PATHS.has(pathname) && !isAdmin) {
     return NextResponse.redirect(new URL("/analysis", request.url));
   }
 
-  return response;
+  const headers = new Headers(request.headers);
+  headers.delete("x-dashboard-admin");
+  headers.delete("x-authenticated-user-email");
+  headers.set("x-authenticated-user-email", data.user.email!.toLowerCase());
+  if (isAdmin) headers.set("x-dashboard-admin", "1");
+  const authorizedResponse = NextResponse.next({ request: { headers } });
+  response.cookies.getAll().forEach(cookie => authorizedResponse.cookies.set(cookie));
+  return authorizedResponse;
 }
 
 function requiredEnv(name: "SUPABASE_URL" | "SUPABASE_PUBLISHABLE_KEY") {
