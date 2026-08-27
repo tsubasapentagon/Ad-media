@@ -3,20 +3,22 @@
 import { useEffect, useState } from "react";
 
 const INTRO_SEEN_KEY = "kobayashi-ad-intro-seen";
+function hasSeenIntro(){try{return sessionStorage.getItem(INTRO_SEEN_KEY)==="1"}catch{return false}}
+function rememberIntro(){try{sessionStorage.setItem(INTRO_SEEN_KEY,"1")}catch{/* 演出は保存失敗時も閉じる */}}
 
 export function LoginIntro() {
   const [visible, setVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
-    if (sessionStorage.getItem(INTRO_SEEN_KEY)) {
+    if (hasSeenIntro()) {
       const removeTimer = window.setTimeout(() => setVisible(false), 0);
       return () => window.clearTimeout(removeTimer);
     }
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const leaveTimer = window.setTimeout(() => setLeaving(true), reducedMotion ? 350 : 2350);
     const removeTimer = window.setTimeout(() => {
-      sessionStorage.setItem(INTRO_SEEN_KEY, "1");
+      rememberIntro();
       setVisible(false);
     }, reducedMotion ? 650 : 2950);
     return () => {
@@ -26,8 +28,8 @@ export function LoginIntro() {
   }, []);
 
   function skip() {
-    sessionStorage.setItem(INTRO_SEEN_KEY, "1");
     setLeaving(true);
+    rememberIntro();
     window.setTimeout(() => setVisible(false), 450);
   }
 
