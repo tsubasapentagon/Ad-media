@@ -1,4 +1,5 @@
 import { LoginButton } from "./LoginButton";
+import { LoginIntro } from "./LoginIntro";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export default async function LoginPage({
   const next = safeNext(params.next);
   return (
     <main className="login-page">
+      <LoginIntro />
       <section className="login-card">
         <div className="login-brand"><span>K</span><div><strong>小林広告分析</strong><small>ver.2</small></div></div>
         <div className="login-copy">
